@@ -161,7 +161,17 @@ All settings are in `nutclient.json`, which must be in the same directory as the
     "ShutdownCommand": "powershell.exe",
     "ShutdownArguments": "-ExecutionPolicy Bypass -File C:\\Scripts\\graceful-shutdown.ps1",
     "LogFile": "C:\\Scripts\\nutclient.log",
-    "StatusFile": "C:\\Scripts\\nutclient-status.json"
+    "StatusFile": "C:\\Scripts\\nutclient-status.json",
+    "LogLevel": "events",
+    "LogMaxBytes": 1048576,
+    "DeadTimeSeconds": 30,
+    "BatteryChargePercent": null,
+    "BatteryRuntimeSeconds": null,
+    "InputVoltageMinWarn": null,
+    "LoadPercentWarn": null,
+    "PreShutdownCommand": null,
+    "PreShutdownArguments": null,
+    "PreShutdownDelaySeconds": 5
   }
 }
 ```
@@ -195,6 +205,9 @@ All settings are in `nutclient.json`, which must be in the same directory as the
 | `PreShutdownArguments` | Arguments for the pre-shutdown command | `null` |
 | `PreShutdownDelaySeconds` | Seconds to wait between pre-shutdown and shutdown commands | `5` |
 | `LogMaxBytes` | Rotate log file when it exceeds this size in bytes | `1048576` (1 MB) |
+| `LogLevel` | `"events"` = only state changes, warnings, errors, shutdown; `"all"` = every poll | `"events"` |
+
+**Log level:** In `events` mode (default), the log is silent during normal AC operation — it only writes when something happens (power loss, restore, countdown, warnings, errors, shutdown). Use `"all"` for debugging to see every poll with UPS status. The status file is always updated every poll regardless of log level.
 
 **Threshold notes:**
 - `BatteryChargePercent` and `BatteryRuntimeSeconds` only trigger shutdown when the UPS is already on battery (`OB`). They won't trigger during normal charging.
