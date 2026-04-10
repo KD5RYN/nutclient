@@ -40,4 +40,7 @@ public class MonitoringConfig
 
     // Log rotation
     public long LogMaxBytes { get; set; } = 1_048_576;  // 1 MB default
+
+    // Log level: "events" (default) = only state changes and actions; "all" = every poll
+    public string LogLevel { get; set; } = "events";
 }

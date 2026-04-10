@@ -48,7 +48,8 @@ public class UpsStateMachine
 
     public StatusDecision HandleStatus(UpsData data)
     {
-        var messages = new List<string>();
+        var events = new List<string>();  // always logged
+        var polls = new List<string>();   // only logged when LogLevel=all
         ShutdownAction? shutdown = null;
 
         var status = data.Status;
@@ -57,7 +58,7 @@ public class UpsStateMachine
 
         var chargeStr = data.BatteryCharge.HasValue ? $", charge: {data.BatteryCharge}%" : "";
         var runtimeStr = data.BatteryRuntime.HasValue ? $", runtime: {data.BatteryRuntime}s" : "";
-        messages.Add($"UPS status: {status}{chargeStr}{runtimeStr}");
+        polls.Add($"UPS status: {status}{chargeStr}{runtimeStr}");
 
         var isOnBattery = status.Contains("OB");
         var isLowBattery = status.Contains("LB");
@@ -70,8 +71,8 @@ public class UpsStateMachine
             _batteryStartTime = _clock.GetUtcNow();
             _shutdownInitiated = false;
             _currentState = "On Battery";
-            messages.Add($"POWER LOSS DETECTED — UPS on battery (status: {status})");
-            messages.Add($"Shutdown will begin in {_config.ShutdownDelaySeconds} seconds if power is not restored");
+            events.Add($"POWER LOSS DETECTED — UPS on battery (status: {status})");
+            events.Add($"Shutdown will begin in {_config.ShutdownDelaySeconds} seconds if power is not restored");
             AddHistory(status, "power loss detected");
         }
         // Transition: on battery → AC power restored
@@ -80,11 +81,11 @@ public class UpsStateMachine
             _onBattery = false;
             _batteryStartTime = null;
             _currentState = "Online";
-            messages.Add($"POWER RESTORED — UPS back online (status: {status})");
+            events.Add($"POWER RESTORED — UPS back online (status: {status})");
             AddHistory(status, "power restored");
 
             if (!_shutdownInitiated)
-                messages.Add("Shutdown cancelled — power returned in time");
+                events.Add("Shutdown cancelled — power returned in time");
         }
         else
         {
@@ -97,11 +98,11 @@ public class UpsStateMachine
         {
             var reason = isForcedShutdown ? "forced_shutdown" : "low_battery";
             _currentState = "Shutting Down";
-            messages.Add($"{reason.ToUpper()} — immediate shutdown (status: {status})");
+            events.Add($"{reason.ToUpper()} — immediate shutdown (status: {status})");
             AddHistory(status, reason);
             shutdown = new ShutdownAction(reason, data);
             _shutdownInitiated = true;
-            return new StatusDecision(shutdown, messages, _currentState);
+            return new StatusDecision(shutdown, events, polls, _currentState);
         }
 
         // Threshold checks — only when on battery
@@ -112,11 +113,11 @@ public class UpsStateMachine
                 && data.BatteryCharge.Value <= _config.BatteryChargePercent.Value)
             {
                 _currentState = "Shutting Down";
-                messages.Add($"BATTERY CHARGE {data.BatteryCharge}% at or below threshold ({_config.BatteryChargePercent}%) — initiating shutdown");
+                events.Add($"BATTERY CHARGE {data.BatteryCharge}% at or below threshold ({_config.BatteryChargePercent}%) — initiating shutdown");
                 AddHistory(status, $"battery_charge <= {_config.BatteryChargePercent}%");
                 shutdown = new ShutdownAction("battery_charge", data);
                 _shutdownInitiated = true;
-                return new StatusDecision(shutdown, messages, _currentState);
+                return new StatusDecision(shutdown, events, polls, _currentState);
             }
 
             if (_config.BatteryRuntimeSeconds.HasValue
@@ -124,11 +125,11 @@ public class UpsStateMachine
                 && data.BatteryRuntime.Value <= _config.BatteryRuntimeSeconds.Value)
             {
                 _currentState = "Shutting Down";
-                messages.Add($"BATTERY RUNTIME {data.BatteryRuntime}s at or below threshold ({_config.BatteryRuntimeSeconds}s) — initiating shutdown");
+                events.Add($"BATTERY RUNTIME {data.BatteryRuntime}s at or below threshold ({_config.BatteryRuntimeSeconds}s) — initiating shutdown");
                 AddHistory(status, $"battery_runtime <= {_config.BatteryRuntimeSeconds}s");
                 shutdown = new ShutdownAction("battery_runtime", data);
                 _shutdownInitiated = true;
-                return new StatusDecision(shutdown, messages, _currentState);
+                return new StatusDecision(shutdown, events, polls, _currentState);
             }
         }
 
@@ -139,7 +140,7 @@ public class UpsStateMachine
             if (elapsed >= _config.ShutdownDelaySeconds)
             {
                 _currentState = "Shutting Down";
-                messages.Add($"Shutdown delay of {_config.ShutdownDelaySeconds}s elapsed — initiating shutdown");
+                events.Add($"Shutdown delay of {_config.ShutdownDelaySeconds}s elapsed — initiating shutdown");
                 AddHistory(status, "timer_expired");
                 shutdown = new ShutdownAction("timer_expired", data);
                 _shutdownInitiated = true;
@@ -147,7 +148,8 @@ public class UpsStateMachine
             else
             {
                 var remaining = _config.ShutdownDelaySeconds - (int)elapsed;
-                messages.Add($"On battery for {(int)elapsed}s — shutdown in {remaining}s");
+                // Countdown is important — log as event so it always shows during battery
+                events.Add($"On battery for {(int)elapsed}s — shutdown in {remaining}s");
             }
         }
 
@@ -156,33 +158,33 @@ public class UpsStateMachine
             && data.InputVoltage.HasValue
             && data.InputVoltage.Value < _config.InputVoltageMinWarn.Value)
         {
-            messages.Add($"WARNING: Input voltage {data.InputVoltage:F1}V below threshold ({_config.InputVoltageMinWarn}V)");
+            events.Add($"WARNING: Input voltage {data.InputVoltage:F1}V below threshold ({_config.InputVoltageMinWarn}V)");
         }
 
         if (_config.LoadPercentWarn.HasValue
             && data.Load.HasValue
             && data.Load.Value > _config.LoadPercentWarn.Value)
         {
-            messages.Add($"WARNING: UPS load {data.Load}% exceeds threshold ({_config.LoadPercentWarn}%)");
+            events.Add($"WARNING: UPS load {data.Load}% exceeds threshold ({_config.LoadPercentWarn}%)");
         }
 
-        return new StatusDecision(shutdown, messages, _currentState);
+        return new StatusDecision(shutdown, events, polls, _currentState);
     }
 
     public PollDecision OnPollSuccess()
     {
-        var messages = new List<string>();
+        var events = new List<string>();
         if (_consecutiveFailures > 0)
-            messages.Add($"Connection restored after {_consecutiveFailures} failed poll(s)");
+            events.Add($"Connection restored after {_consecutiveFailures} failed poll(s)");
 
         _consecutiveFailures = 0;
         _lastSuccessfulPoll = _clock.GetUtcNow();
-        return new PollDecision(null, messages);
+        return new PollDecision(null, events, new List<string>());
     }
 
     public PollDecision OnPollFailure(string message)
     {
-        var messages = new List<string>();
+        var events = new List<string>();
         ShutdownAction? shutdown = null;
 
         _consecutiveFailures++;
@@ -190,17 +192,17 @@ public class UpsStateMachine
         AddHistory("error", message);
 
         if (_consecutiveFailures <= 3 || _consecutiveFailures % 10 == 0)
-            messages.Add($"Poll error ({_consecutiveFailures} consecutive): {message}");
+            events.Add($"Poll error ({_consecutiveFailures} consecutive): {message}");
 
         if (_lastSuccessfulPoll.HasValue)
         {
             var downtime = (_clock.GetUtcNow() - _lastSuccessfulPoll.Value).TotalSeconds;
             if (_consecutiveFailures == 6)
-                messages.Add($"WARNING: UPS server unreachable for {(int)downtime}s");
+                events.Add($"WARNING: UPS server unreachable for {(int)downtime}s");
         }
         else if (_consecutiveFailures == 6)
         {
-            messages.Add("WARNING: UPS server has never been reachable since startup");
+            events.Add("WARNING: UPS server has never been reachable since startup");
         }
 
         // Dead time check
@@ -210,14 +212,14 @@ public class UpsStateMachine
             if (downtime >= _config.DeadTimeSeconds)
             {
                 _currentState = "Shutting Down";
-                messages.Add($"DEAD TIME — server unreachable for {(int)downtime}s while on battery, assuming power still out — initiating shutdown");
+                events.Add($"DEAD TIME — server unreachable for {(int)downtime}s while on battery, assuming power still out — initiating shutdown");
                 AddHistory("error", "dead_time");
                 shutdown = new ShutdownAction("dead_time", _lastUpsData);
                 _shutdownInitiated = true;
             }
         }
 
-        return new PollDecision(shutdown, messages);
+        return new PollDecision(shutdown, events, new List<string>());
     }
 
     public void SetAccessDenied()
@@ -278,5 +280,5 @@ public class UpsStateMachine
 }
 
 public record ShutdownAction(string Reason, UpsData Data);
-public record StatusDecision(ShutdownAction? Shutdown, List<string> LogMessages, string NewState);
-public record PollDecision(ShutdownAction? Shutdown, List<string> LogMessages);
+public record StatusDecision(ShutdownAction? Shutdown, List<string> EventMessages, List<string> PollMessages, string NewState);
+public record PollDecision(ShutdownAction? Shutdown, List<string> EventMessages, List<string> PollMessages);

@@ -93,10 +93,15 @@ public class NutMonitorService : BackgroundService
         Log("NUT UPS Monitor stopped");
     }
 
+    private bool LogAll => _config.Monitoring.LogLevel.Equals("all", StringComparison.OrdinalIgnoreCase);
+
     private void ProcessPollDecision(PollDecision decision)
     {
-        foreach (var msg in decision.LogMessages)
+        foreach (var msg in decision.EventMessages)
             Log(msg);
+        if (LogAll)
+            foreach (var msg in decision.PollMessages)
+                Log(msg);
         if (decision.Shutdown is { } s)
             ExecuteShutdown(s.Reason, s.Data);
         WriteStatusFile();
@@ -104,8 +109,11 @@ public class NutMonitorService : BackgroundService
 
     private void ProcessStatusDecision(StatusDecision decision)
     {
-        foreach (var msg in decision.LogMessages)
+        foreach (var msg in decision.EventMessages)
             Log(msg);
+        if (LogAll)
+            foreach (var msg in decision.PollMessages)
+                Log(msg);
         if (decision.Shutdown is { } s)
             ExecuteShutdown(s.Reason, s.Data);
     }

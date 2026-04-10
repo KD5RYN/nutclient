@@ -56,7 +56,7 @@ public class UpsStateMachineTests
         Assert.Equal("Online", decision.NewState);
         Assert.False(_sm.IsOnBattery);
         Assert.Null(decision.Shutdown);
-        Assert.Contains(decision.LogMessages, m => m.Contains("POWER RESTORED"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("POWER RESTORED"));
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class UpsStateMachineTests
         _sm.HandleStatus(Status("OB"));
         var decision = _sm.HandleStatus(Status("OL"));
 
-        Assert.Contains(decision.LogMessages, m => m.Contains("Shutdown cancelled"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("Shutdown cancelled"));
     }
 
     // --- Immediate shutdown triggers ---
@@ -119,7 +119,7 @@ public class UpsStateMachineTests
 
         var decision = _sm.HandleStatus(Status("OB"));
         Assert.Null(decision.Shutdown);
-        Assert.Contains(decision.LogMessages, m => m.Contains("shutdown in"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("shutdown in"));
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public class UpsStateMachineTests
             Status = "OL", InputVoltage = 95.5
         });
         Assert.Null(decision.Shutdown);
-        Assert.Contains(decision.LogMessages, m => m.Contains("WARNING: Input voltage"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("WARNING: Input voltage"));
     }
 
     [Fact]
@@ -222,7 +222,7 @@ public class UpsStateMachineTests
             Status = "OL", Load = 90
         });
         Assert.Null(decision.Shutdown);
-        Assert.Contains(decision.LogMessages, m => m.Contains("WARNING: UPS load"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("WARNING: UPS load"));
     }
 
     [Fact]
@@ -233,7 +233,7 @@ public class UpsStateMachineTests
         {
             Status = "OL", InputVoltage = 120.0
         });
-        Assert.DoesNotContain(decision.LogMessages, m => m.Contains("WARNING"));
+        Assert.DoesNotContain(decision.EventMessages, m => m.Contains("WARNING"));
     }
 
     // --- Poll success/failure ---
@@ -254,14 +254,14 @@ public class UpsStateMachineTests
     {
         _sm.OnPollFailure("error");
         var decision = _sm.OnPollSuccess();
-        Assert.Contains(decision.LogMessages, m => m.Contains("Connection restored"));
+        Assert.Contains(decision.EventMessages, m => m.Contains("Connection restored"));
     }
 
     [Fact]
     public void OnPollSuccess_NoMessageWhenNoFailures()
     {
         var decision = _sm.OnPollSuccess();
-        Assert.Empty(decision.LogMessages);
+        Assert.Empty(decision.EventMessages);
     }
 
     [Fact]

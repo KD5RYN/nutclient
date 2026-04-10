@@ -21,6 +21,7 @@
     "PreShutdownCommand": null,
     "PreShutdownArguments": null,
     "PreShutdownDelaySeconds": 5,
-    "LogMaxBytes": 1048576
+    "LogMaxBytes": 1048576,
+    "LogLevel": "events"
   }
 }
