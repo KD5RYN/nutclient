@@ -29,62 +29,65 @@ A .NET 8 service that monitors a NUT (Network UPS Tools) server and runs a shutd
 
 ## Prerequisites
 
-- **.NET 8 SDK** — needed to build. Download from https://dotnet.microsoft.com/download/dotnet/8.0
 - **NUT server** accessible on the network (port 3493)
+- No .NET SDK required — pre-built binaries are available
 
 ---
 
-## Quick Start
+## Installation
 
-### 1. Build
+### Option A: Download pre-built release (recommended)
 
-```bash
-# Windows
-dotnet publish -c Release -r win-x64 -o C:\NutClient
+Download the latest release for your platform from [GitHub Releases](../../releases):
 
-# Linux x64
-dotnet publish -c Release -r linux-x64 -o /opt/nutclient
-
-# Linux ARM64 (Raspberry Pi, Synology)
-dotnet publish -c Release -r linux-arm64 -o /opt/nutclient
-```
-
-### 2. Configure
-
-Copy and edit the config file:
-
-```bash
-# Windows — config is already set up for Windows defaults
-copy nutclient.json C:\NutClient\nutclient.json
-
-# Linux — use the Linux example
-cp nutclient.json.linux-example /opt/nutclient/nutclient.json
-```
-
-Edit `nutclient.json` for your environment (see [Configuration](#configuration) below).
-
-### 3. Set Up the Shutdown Script
-
-Copy the example script and customize it for your server:
-
-**Windows:**
-```powershell
-mkdir C:\Scripts
-copy scripts\graceful-shutdown.ps1 C:\Scripts\graceful-shutdown.ps1
-```
+- `nutclient-win-x64.zip` — Windows
+- `nutclient-linux-x64.tar.gz` — Linux x64
+- `nutclient-linux-arm64.tar.gz` — Linux ARM64 (Raspberry Pi, Synology)
 
 **Linux:**
 ```bash
-sudo mkdir -p /opt/nutclient/scripts
-sudo cp scripts/graceful-shutdown.sh /opt/nutclient/scripts/
-sudo chmod +x /opt/nutclient/scripts/graceful-shutdown.sh
+tar xzf nutclient-linux-x64.tar.gz
+cd linux-x64
+nano nutclient.json              # set NUT server host, UPS name, credentials
+sudo ./install.sh
 ```
 
-Edit the script to add any server-specific tasks (stop VMs, containers, services, etc.).
+**Windows** (run PowerShell as Administrator):
+```powershell
+Expand-Archive nutclient-win-x64.zip -DestinationPath C:\NutClient
+cd C:\NutClient\win-x64
+notepad nutclient.json           # set NUT server host, UPS name, credentials
+powershell -File install.ps1
+```
 
-### 4. Test in Console Mode
+The install scripts will:
+- Copy the binary, config, and shutdown script to the right locations
+- Install and enable the service (systemd or Windows service)
+- Preserve existing config if upgrading
 
-Run it interactively first to verify it connects and polls:
+### Option B: Build from source
+
+Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+
+```bash
+# Clone
+git clone https://github.com/your-org/nutclient.git
+cd nutclient
+
+# Build
+dotnet publish nutclient -c Release -r linux-x64 -o publish
+# or: -r win-x64, -r linux-arm64
+
+# Install
+cd publish
+nano nutclient.json
+sudo ./install.sh                # Linux
+# or: powershell -File install.ps1   # Windows
+```
+
+### Testing in Console Mode
+
+Before relying on the service, run interactively to verify it connects:
 
 ```bash
 # Windows
@@ -98,47 +101,35 @@ You should see output like:
 ```
 2026-04-10 14:30:41 NUT UPS Monitor started
 2026-04-10 14:30:41 Monitoring ups1@necprojpi3.necproj.com:3493
-2026-04-10 14:30:41 UPS status: OL, charge: 100%, runtime: 608s
-2026-04-10 14:30:46 UPS status: OL, charge: 100%, runtime: 608s
 ```
 
-Press Ctrl+C to stop.
+With `LogLevel: "events"` (default), it will be silent during normal polling and only log when something happens. Press Ctrl+C to stop.
 
-### 5. Install as a Service
+### Managing the Service
 
-**Windows** (run PowerShell as Administrator):
+**Windows:**
 ```powershell
-powershell -File C:\NutClient\install-service.ps1
+Get-Service NutUpsMonitor                              # check status
+Start-Service NutUpsMonitor                            # start
+Stop-Service NutUpsMonitor                             # stop
+Restart-Service NutUpsMonitor                          # restart
+Get-Content C:\Scripts\nutclient.log -Tail 20          # view logs
+Get-Content C:\Scripts\nutclient-status.json           # quick status
 ```
 
-This creates a Windows service called "NUT UPS Monitor" that:
-- Starts automatically on boot
-- Restarts on failure (after 10s, 30s, 60s)
-
-Manage it with:
-```powershell
-Get-Service NutUpsMonitor
-Start-Service NutUpsMonitor
-Stop-Service NutUpsMonitor
-```
-
-To remove the service:
-```powershell
-powershell -File C:\NutClient\uninstall-service.ps1
-```
+To uninstall: `powershell -File C:\NutClient\uninstall-service.ps1`
 
 **Linux:**
 ```bash
-sudo cp nutclient.service /etc/systemd/system/
-sudo systemctl enable --now nutclient
+sudo systemctl status nutclient                        # check status
+sudo systemctl start nutclient                         # start
+sudo systemctl stop nutclient                          # stop
+sudo systemctl restart nutclient                       # restart
+journalctl -u nutclient -f                             # view logs
+cat /var/log/nutclient-status.json                     # quick status
 ```
 
-Manage it with:
-```bash
-sudo systemctl status nutclient
-sudo systemctl restart nutclient
-journalctl -u nutclient -f
-```
+To uninstall: `sudo systemctl disable --now nutclient && sudo rm -rf /opt/nutclient /etc/systemd/system/nutclient.service`
 
 ---
 
