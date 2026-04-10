@@ -1,0 +1,5 @@
+nutclient/bin/
+nutclient/obj/
+nutclient/publish*/
+nutclient.tests/bin/
+nutclient.tests/obj/

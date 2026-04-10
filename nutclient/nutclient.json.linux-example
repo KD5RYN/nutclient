@@ -1,0 +1,26 @@
+{
+  "NutServer": {
+    "Host": "necprojpi3.necproj.com",
+    "Port": 3493,
+    "UpsName": "ups1",
+    "Username": "upsmon_secondary",
+    "Password": "j0@tm0n"
+  },
+  "Monitoring": {
+    "PollIntervalSeconds": 5,
+    "ShutdownDelaySeconds": 60,
+    "ShutdownCommand": "/bin/bash",
+    "ShutdownArguments": "/opt/nutclient/scripts/graceful-shutdown.sh",
+    "LogFile": "/var/log/nutclient.log",
+    "StatusFile": "/var/log/nutclient-status.json",
+    "BatteryChargePercent": null,
+    "BatteryRuntimeSeconds": null,
+    "InputVoltageMinWarn": null,
+    "LoadPercentWarn": null,
+    "DeadTimeSeconds": 30,
+    "PreShutdownCommand": null,
+    "PreShutdownArguments": null,
+    "PreShutdownDelaySeconds": 5,
+    "LogMaxBytes": 1048576
+  }
+}

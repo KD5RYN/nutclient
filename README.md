@@ -1,0 +1,451 @@
+# NutClient — Cross-Platform NUT UPS Monitor
+
+A .NET 8 service that monitors a NUT (Network UPS Tools) server and runs a shutdown script when UPS power is lost. Works on Windows and Linux.
+
+## How It Works
+
+```
+  NUT Server (Pi)                    This Client (any server)
+ ┌──────────────┐                   ┌──────────────────────────┐
+ │ upsd :3493   │◄── TCP poll ──────│ NutClient                │
+ │              │    every 5s       │                          │
+ │ ups1, ups2   │                   │ On battery → 60s timer   │
+ └──────────────┘                   │ Timer expires → script   │
+                                    │ Low battery → immediate  │
+                                    │ FSD → immediate          │
+                                    │ Power restored → cancel  │
+                                    └──────────────────────────┘
+```
+
+- Connects to a NUT server via TCP port 3493
+- Polls `ups.status` every 5 seconds (configurable)
+- On battery (`OB`): starts a 60-second countdown
+- Low battery (`LB`) or Forced Shutdown (`FSD`): immediate shutdown
+- Power restored during countdown: cancels shutdown
+- Runs a configurable shutdown script (PowerShell on Windows, bash on Linux)
+- Writes a status file (`nutclient-status.json`) with current state and last 25 poll results
+
+---
+
+## Prerequisites
+
+- **.NET 8 SDK** — needed to build. Download from https://dotnet.microsoft.com/download/dotnet/8.0
+- **NUT server** accessible on the network (port 3493)
+
+---
+
+## Quick Start
+
+### 1. Build
+
+```bash
+# Windows
+dotnet publish -c Release -r win-x64 -o C:\NutClient
+
+# Linux x64
+dotnet publish -c Release -r linux-x64 -o /opt/nutclient
+
+# Linux ARM64 (Raspberry Pi, Synology)
+dotnet publish -c Release -r linux-arm64 -o /opt/nutclient
+```
+
+### 2. Configure
+
+Copy and edit the config file:
+
+```bash
+# Windows — config is already set up for Windows defaults
+copy nutclient.json C:\NutClient\nutclient.json
+
+# Linux — use the Linux example
+cp nutclient.json.linux-example /opt/nutclient/nutclient.json
+```
+
+Edit `nutclient.json` for your environment (see [Configuration](#configuration) below).
+
+### 3. Set Up the Shutdown Script
+
+Copy the example script and customize it for your server:
+
+**Windows:**
+```powershell
+mkdir C:\Scripts
+copy scripts\graceful-shutdown.ps1 C:\Scripts\graceful-shutdown.ps1
+```
+
+**Linux:**
+```bash
+sudo mkdir -p /opt/nutclient/scripts
+sudo cp scripts/graceful-shutdown.sh /opt/nutclient/scripts/
+sudo chmod +x /opt/nutclient/scripts/graceful-shutdown.sh
+```
+
+Edit the script to add any server-specific tasks (stop VMs, containers, services, etc.).
+
+### 4. Test in Console Mode
+
+Run it interactively first to verify it connects and polls:
+
+```bash
+# Windows
+C:\NutClient\NutClient.exe
+
+# Linux
+/opt/nutclient/NutClient
+```
+
+You should see output like:
+```
+2026-04-10 14:30:41 NUT UPS Monitor started
+2026-04-10 14:30:41 Monitoring ups1@necprojpi3.necproj.com:3493
+2026-04-10 14:30:41 UPS status: OL, charge: 100%, runtime: 608s
+2026-04-10 14:30:46 UPS status: OL, charge: 100%, runtime: 608s
+```
+
+Press Ctrl+C to stop.
+
+### 5. Install as a Service
+
+**Windows** (run PowerShell as Administrator):
+```powershell
+powershell -File C:\NutClient\install-service.ps1
+```
+
+This creates a Windows service called "NUT UPS Monitor" that:
+- Starts automatically on boot
+- Restarts on failure (after 10s, 30s, 60s)
+
+Manage it with:
+```powershell
+Get-Service NutUpsMonitor
+Start-Service NutUpsMonitor
+Stop-Service NutUpsMonitor
+```
+
+To remove the service:
+```powershell
+powershell -File C:\NutClient\uninstall-service.ps1
+```
+
+**Linux:**
+```bash
+sudo cp nutclient.service /etc/systemd/system/
+sudo systemctl enable --now nutclient
+```
+
+Manage it with:
+```bash
+sudo systemctl status nutclient
+sudo systemctl restart nutclient
+journalctl -u nutclient -f
+```
+
+---
+
+## Configuration
+
+All settings are in `nutclient.json`, which must be in the same directory as the executable.
+
+```json
+{
+  "NutServer": {
+    "Host": "necprojpi3.necproj.com",
+    "Port": 3493,
+    "UpsName": "ups1",
+    "Username": "upsmon_secondary",
+    "Password": "j0@tm0n"
+  },
+  "Monitoring": {
+    "PollIntervalSeconds": 5,
+    "ShutdownDelaySeconds": 60,
+    "ShutdownCommand": "powershell.exe",
+    "ShutdownArguments": "-ExecutionPolicy Bypass -File C:\\Scripts\\graceful-shutdown.ps1",
+    "LogFile": "C:\\Scripts\\nutclient.log",
+    "StatusFile": "C:\\Scripts\\nutclient-status.json"
+  }
+}
+```
+
+### NutServer Settings
+
+| Setting | Description |
+|---------|-------------|
+| `Host` | Hostname or IP of the NUT server |
+| `Port` | NUT server port (default 3493) |
+| `UpsName` | Name of the UPS to monitor (e.g., `ups1`, `ups2`) |
+| `Username` | NUT username for authentication |
+| `Password` | NUT password for authentication |
+
+### Monitoring Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `PollIntervalSeconds` | How often to check UPS status | `5` |
+| `ShutdownDelaySeconds` | Seconds to wait on battery before shutting down | `60` |
+| `ShutdownCommand` | Program to run for shutdown | Windows: `powershell.exe`, Linux: `/bin/bash` |
+| `ShutdownArguments` | Arguments passed to shutdown command | Path to shutdown script |
+| `LogFile` | Path to the log file | Windows: `C:\Scripts\nutclient.log`, Linux: `/var/log/nutclient.log` |
+| `StatusFile` | Path to the status JSON file (leave empty for default next to exe) | Windows: `C:\Scripts\nutclient-status.json`, Linux: `/var/log/nutclient-status.json` |
+| `BatteryChargePercent` | Shut down when battery charge drops to or below this % (on battery only) | `null` (disabled) |
+| `BatteryRuntimeSeconds` | Shut down when estimated runtime drops to or below this many seconds (on battery only) | `null` (disabled) |
+| `InputVoltageMinWarn` | Log a warning when input AC voltage drops below this value | `null` (disabled) |
+| `LoadPercentWarn` | Log a warning when UPS load exceeds this % | `null` (disabled) |
+| `DeadTimeSeconds` | If server is unreachable while last known on battery, shut down after this many seconds | `30` |
+| `PreShutdownCommand` | Program to run before the main shutdown command (e.g., send alert, sync) | `null` (disabled) |
+| `PreShutdownArguments` | Arguments for the pre-shutdown command | `null` |
+| `PreShutdownDelaySeconds` | Seconds to wait between pre-shutdown and shutdown commands | `5` |
+| `LogMaxBytes` | Rotate log file when it exceeds this size in bytes | `1048576` (1 MB) |
+
+**Threshold notes:**
+- `BatteryChargePercent` and `BatteryRuntimeSeconds` only trigger shutdown when the UPS is already on battery (`OB`). They won't trigger during normal charging.
+- `InputVoltageMinWarn` and `LoadPercentWarn` are warning-only — they log but don't trigger shutdown.
+- Set to `null` to disable (default). The basic OB/LB/FSD status-based shutdown works without any thresholds configured.
+
+**Dead time:** If the NUT server becomes unreachable while the UPS was last known to be on battery, the client assumes the worst (power is still out, UPS is draining) and triggers shutdown after `DeadTimeSeconds`. This prevents a network failure during a power outage from leaving the server running until the UPS dies.
+
+**Pre-shutdown hook:** Runs before the main shutdown script with the same arguments (reason, charge, runtime, status). Use it to send a final email alert, flush caches, notify users, or stop databases before the main shutdown script runs. The `PreShutdownDelaySeconds` gap gives the pre-shutdown command time to complete.
+
+**Log rotation:** When the log file exceeds `LogMaxBytes`, it's copied to `<logfile>.1` and the original is cleared. Only one rotated backup is kept.
+
+---
+
+## Shutdown Scripts
+
+The client runs a script when shutdown is triggered. Example scripts are in the `scripts/` directory.
+
+NutClient appends the following arguments to your configured `ShutdownArguments`:
+
+| Argument | Position | Description |
+|----------|----------|-------------|
+| Reason | 1 | Why shutdown was triggered (see table below) |
+| Battery Charge | 2 | Battery % at time of shutdown (-1 if unknown) |
+| Battery Runtime | 3 | Estimated runtime in seconds (-1 if unknown) |
+| UPS Status | 4 | Raw UPS status string (e.g., "OB LB") |
+
+**Reason values:**
+
+| Reason | Meaning |
+|--------|---------|
+| `timer_expired` | On battery for ShutdownDelaySeconds with no power restore |
+| `low_battery` | UPS flagged LB (low battery) |
+| `forced_shutdown` | UPS flagged FSD (forced shutdown) |
+| `battery_charge` | Battery charge dropped to or below BatteryChargePercent threshold |
+| `battery_runtime` | Estimated runtime dropped to or below BatteryRuntimeSeconds threshold |
+| `dead_time` | NUT server unreachable while last known on battery for DeadTimeSeconds |
+
+### Windows — `graceful-shutdown.ps1`
+
+Default location: `C:\Scripts\graceful-shutdown.ps1`
+
+The script receives arguments as named PowerShell parameters:
+```powershell
+param(
+    [string]$Reason = "unknown",
+    [int]$BatteryCharge = -1,
+    [int]$BatteryRuntime = -1,
+    [string]$UpsStatus = ""
+)
+```
+
+What the example does:
+- Logs the shutdown event with reason and battery info
+- Stops all running Hyper-V VMs (if Hyper-V is installed)
+- Shuts down Windows
+
+Customize it to stop your own services, save application state, or take different actions based on the reason.
+
+### Linux — `graceful-shutdown.sh`
+
+Default location: `/opt/nutclient/scripts/graceful-shutdown.sh`
+
+The script receives arguments as positional parameters:
+```bash
+REASON="${1:-unknown}"
+BATTERY_CHARGE="${2:--1}"
+BATTERY_RUNTIME="${3:--1}"
+UPS_STATUS="${4:-}"
+```
+
+What the example does:
+- Logs the shutdown event with reason and battery info
+- Includes commented-out examples for stopping Docker containers and systemd services
+- Runs `poweroff`
+
+Must be executable: `chmod +x graceful-shutdown.sh`
+
+---
+
+## Status File
+
+The client writes a `nutclient-status.json` file every poll cycle. This gives you a quick way to check current state without reading logs.
+
+```bash
+# Windows
+type C:\Scripts\nutclient-status.json
+
+# Linux
+cat /var/log/nutclient-status.json
+```
+
+Example output:
+```json
+{
+  "server": "necprojpi3.necproj.com:3493",
+  "upsName": "ups1",
+  "state": "Online",
+  "currentStatus": "OL",
+  "batteryCharge": 100,
+  "batteryRuntime": 608,
+  "inputVoltage": 115.6,
+  "upsLoad": 49,
+  "lastPoll": "2026-04-10 14:30:41",
+  "consecutiveFailures": 0,
+  "history": [
+    { "time": "2026-04-10 14:30:41", "status": "OL", "event": "poll" },
+    { "time": "2026-04-10 14:30:36", "status": "OL", "event": "poll" }
+  ]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `state` | Human-readable: `Online`, `On Battery`, `Shutting Down`, `Error`, `Access Denied` |
+| `currentStatus` | Raw UPS status string (e.g., `OL`, `OB`, `OB LB`) |
+| `batteryCharge` | Battery charge % (null if not available) |
+| `batteryRuntime` | Estimated runtime in seconds (null if not available) |
+| `inputVoltage` | AC input voltage (null if `InputVoltageMinWarn` not configured) |
+| `upsLoad` | UPS load % (null if `LoadPercentWarn` not configured) |
+| `consecutiveFailures` | Number of failed polls in a row (0 = healthy) |
+| `onBatterySince` | Timestamp when battery mode started (null if on AC) |
+| `shutdownInSeconds` | Seconds until shutdown triggers (null if not counting down) |
+| `history` | Last 25 status entries, newest first |
+
+---
+
+## Error Handling
+
+- **Connection failures**: Retries with exponential backoff (5s, 10s, 20s, 40s, up to 60s max)
+- **Bad credentials**: Stops immediately — fix `nutclient.json` and restart the service
+- **Server unreachable**: Logs a warning after 6 consecutive failures, continues retrying
+- **Connection restored**: Logs recovery and resets to normal polling interval
+
+---
+
+## Development
+
+### Prerequisites
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+
+### Project Structure
+
+```
+nutclient/                    <- Main application
+├── NutClient.csproj          <- .NET 8 project file
+├── Program.cs                <- Entry point — loads config, sets up DI, detects OS
+├── NutMonitorService.cs      <- BackgroundService — poll loop, I/O, shutdown execution
+├── UpsStateMachine.cs        <- Pure state machine — all decision logic, no I/O
+├── NutConnection.cs          <- TCP client for NUT protocol (connect, auth, query)
+├── Config.cs                 <- Configuration model classes
+├── Models.cs                 <- Shared data models (UpsData, StatusSnapshot, etc.)
+├── nutclient.json            <- Config file (Windows defaults)
+├── nutclient.json.linux-example
+├── scripts/
+│   ├── graceful-shutdown.ps1 <- Example Windows shutdown script
+│   └── graceful-shutdown.sh  <- Example Linux shutdown script
+├── install-service.ps1       <- Installs as Windows service
+├── uninstall-service.ps1     <- Removes Windows service
+└── nutclient.service         <- systemd unit file for Linux
+
+nutclient.tests/              <- Test suite
+├── NutClient.Tests.csproj
+├── MockNutServer.cs          <- TCP server that speaks NUT protocol for tests
+├── NutConnectionTests.cs     <- Connection, auth, response parsing, error handling
+├── UpsStateMachineTests.cs   <- State transitions, thresholds, timers, dead time
+└── BackoffTests.cs           <- Exponential backoff calculation
+```
+
+### Architecture
+
+The core logic is split into two layers:
+
+- **`UpsStateMachine`** — Pure decision logic with no I/O. Takes UPS data in, returns decisions (log messages, shutdown actions) out. Uses .NET 8's `TimeProvider` for testable time. This is where all the state transitions, threshold checks, timer logic, and dead time detection live.
+
+- **`NutMonitorService`** — Thin orchestration shell. Runs the poll loop, calls `NutConnection` to fetch data, feeds it to the state machine, and executes the resulting decisions (logging, writing files, running shutdown scripts).
+
+This separation means the state machine can be tested with a fake clock and no network, while `NutConnection` is tested against a `MockNutServer`.
+
+### Building
+
+```bash
+# Build (debug)
+dotnet build nutclient
+
+# Build for deployment
+dotnet publish nutclient -c Release -r linux-x64 -o publish
+dotnet publish nutclient -c Release -r win-x64 -o publish
+dotnet publish nutclient -c Release -r linux-arm64 -o publish
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+dotnet test nutclient.tests
+
+# Run with detailed output
+dotnet test nutclient.tests --verbosity normal
+
+# Run a specific test class
+dotnet test nutclient.tests --filter "FullyQualifiedName~UpsStateMachineTests"
+
+# Run a specific test
+dotnet test nutclient.tests --filter "FullyQualifiedName~TimerExpiry_TriggersShutdown"
+```
+
+### Test Coverage
+
+**52 tests** across 3 files:
+
+| File | Tests | What's covered |
+|------|-------|----------------|
+| `NutConnectionTests` | 10 | TCP connection, auth success/failure, variable queries, error classification (Transient vs AccessDenied vs Protocol), server disconnect |
+| `UpsStateMachineTests` | 35 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once |
+| `BackoffTests` | 7 | Exponential backoff formula, max cap at 60s, reset after success |
+
+Tests use:
+- **`MockNutServer`** — A real TCP listener on localhost (random port) that speaks the NUT text protocol. Tests configure what responses it returns.
+- **`FakeTimeProvider`** — .NET 8's built-in fake clock (`Microsoft.Extensions.Time.Testing`). Lets tests advance time without real waits, making timer and dead time tests instant.
+
+### Adding New Tests
+
+To test a new state machine behavior:
+
+```csharp
+[Fact]
+public void MyNewBehavior_DoesTheThing()
+{
+    // _sm and _clock are set up in the constructor
+    _sm.HandleStatus(Status("OB"));         // put it on battery
+    _clock.Advance(TimeSpan.FromSeconds(10)); // advance time
+    var decision = _sm.HandleStatus(Status("OB", charge: 50));
+
+    Assert.Null(decision.Shutdown);          // or Assert.NotNull
+    Assert.Contains(decision.LogMessages, m => m.Contains("expected text"));
+}
+```
+
+To test NutConnection against the mock server:
+
+```csharp
+[Fact]
+public async Task MyNewConnectionTest()
+{
+    _server.Variables["ups.status"] = "OB";  // configure mock response
+    using var conn = CreateConnection();
+    await conn.ConnectAsync();
+
+    var status = await conn.GetVariableAsync("ups1", "ups.status");
+    Assert.Equal("OB", status);
+}
+```

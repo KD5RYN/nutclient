@@ -1,0 +1,13 @@
+[Unit]
+Description=NUT UPS Monitor Client
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/opt/nutclient/NutClient
+WorkingDirectory=/opt/nutclient
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

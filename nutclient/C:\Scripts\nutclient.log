@@ -1,0 +1,5 @@
+2026-04-10 14:17:56 NUT UPS Monitor started
+2026-04-10 14:17:56 Monitoring ups1@necprojpi3.necproj.com:3493
+2026-04-10 14:17:56 Shutdown delay: 60s
+2026-04-10 14:17:56 Shutdown command: powershell.exe -ExecutionPolicy Bypass -File C:\Scripts\graceful-shutdown.ps1
+2026-04-10 14:18:04 NUT UPS Monitor stopped

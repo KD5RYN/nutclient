@@ -1,0 +1,201 @@
+using System.Net.Sockets;
+using System.Text;
+
+namespace NutClient;
+
+/// <summary>
+/// Classifies NUT connection/protocol errors so the monitor can decide
+/// whether to retry, back off, or stop entirely.
+/// </summary>
+public enum NutErrorKind
+{
+    Transient,   // Network timeout, connection refused, DNS failure — retry with backoff
+    AccessDenied, // Bad credentials — don't retry until config changes
+    Protocol,    // Unexpected response from server — retry, may be transient
+}
+
+public class NutException : Exception
+{
+    public NutErrorKind Kind { get; }
+
+    public NutException(string message, NutErrorKind kind, Exception? inner = null)
+        : base(message, inner)
+    {
+        Kind = kind;
+    }
+}
+
+/// <summary>
+/// Handles TCP communication with a NUT (Network UPS Tools) server.
+/// Protocol: simple line-based text over TCP on port 3493.
+/// </summary>
+public class NutConnection : IDisposable
+{
+    private TcpClient? _client;
+    private NetworkStream? _stream;
+    private StreamReader? _reader;
+    private StreamWriter? _writer;
+
+    private readonly string _host;
+    private readonly int _port;
+    private readonly string _username;
+    private readonly string _password;
+    private readonly int _connectTimeoutMs;
+
+    public bool IsConnected => _client?.Connected ?? false;
+
+    public NutConnection(string host, int port, string username, string password, int connectTimeoutMs = 5000)
+    {
+        _host = host;
+        _port = port;
+        _username = username;
+        _password = password;
+        _connectTimeoutMs = connectTimeoutMs;
+    }
+
+    public async Task ConnectAsync(CancellationToken ct = default)
+    {
+        Disconnect();
+
+        try
+        {
+            _client = new TcpClient();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(_connectTimeoutMs);
+
+            await _client.ConnectAsync(_host, _port, cts.Token);
+
+            _stream = _client.GetStream();
+            _reader = new StreamReader(_stream, Encoding.ASCII);
+            _writer = new StreamWriter(_stream, Encoding.ASCII) { AutoFlush = true };
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Disconnect();
+            throw new NutException(
+                $"Connection to {_host}:{_port} timed out after {_connectTimeoutMs}ms",
+                NutErrorKind.Transient);
+        }
+        catch (SocketException ex)
+        {
+            Disconnect();
+            throw new NutException(
+                $"Connection to {_host}:{_port} failed: {ex.Message}",
+                NutErrorKind.Transient, ex);
+        }
+
+        // Authenticate
+        await SendCommandAsync($"USERNAME {_username}");
+        var resp = await ReadResponseAsync(ct);
+        if (!resp.StartsWith("OK"))
+            throw new NutException($"USERNAME rejected: {resp}", NutErrorKind.AccessDenied);
+
+        await SendCommandAsync($"PASSWORD {_password}");
+        resp = await ReadResponseAsync(ct);
+        if (!resp.StartsWith("OK"))
+            throw new NutException($"PASSWORD rejected: {resp}", NutErrorKind.AccessDenied);
+    }
+
+    public async Task<string> GetVariableAsync(string upsName, string variable, CancellationToken ct = default)
+    {
+        await SendCommandAsync($"GET VAR {upsName} {variable}");
+        var resp = await ReadResponseAsync(ct);
+
+        // Response format: VAR <ups> <variable> "<value>"
+        if (resp.StartsWith("VAR"))
+        {
+            var firstQuote = resp.IndexOf('"');
+            var lastQuote = resp.LastIndexOf('"');
+            if (firstQuote >= 0 && lastQuote > firstQuote)
+                return resp.Substring(firstQuote + 1, lastQuote - firstQuote - 1);
+
+            throw new NutException(
+                $"Malformed VAR response (no quoted value): {resp}",
+                NutErrorKind.Protocol);
+        }
+
+        if (resp.StartsWith("ERR"))
+        {
+            var errCode = resp.Length > 4 ? resp.Substring(4).Trim() : resp;
+
+            // Classify known NUT error codes
+            var kind = errCode switch
+            {
+                "ACCESS-DENIED" => NutErrorKind.AccessDenied,
+                "UNKNOWN-UPS" => NutErrorKind.Protocol,
+                "VAR-NOT-SUPPORTED" => NutErrorKind.Protocol,
+                "DRIVER-NOT-CONNECTED" => NutErrorKind.Transient,
+                "DATA-STALE" => NutErrorKind.Transient,
+                _ => NutErrorKind.Protocol,
+            };
+
+            throw new NutException($"NUT error: {errCode}", kind);
+        }
+
+        throw new NutException(
+            $"Unexpected response: {resp}",
+            NutErrorKind.Protocol);
+    }
+
+    public async Task LogoutAsync()
+    {
+        try
+        {
+            if (_writer != null)
+                await SendCommandAsync("LOGOUT");
+        }
+        catch { }
+    }
+
+    public void Disconnect()
+    {
+        _writer?.Dispose();
+        _reader?.Dispose();
+        _stream?.Dispose();
+        _client?.Dispose();
+        _writer = null;
+        _reader = null;
+        _stream = null;
+        _client = null;
+    }
+
+    public void Dispose() => Disconnect();
+
+    private async Task SendCommandAsync(string command)
+    {
+        if (_writer == null) throw new InvalidOperationException("Not connected");
+        try
+        {
+            await _writer.WriteLineAsync(command);
+        }
+        catch (IOException ex)
+        {
+            throw new NutException(
+                $"Send failed: {ex.Message}", NutErrorKind.Transient, ex);
+        }
+    }
+
+    private async Task<string> ReadResponseAsync(CancellationToken ct)
+    {
+        if (_reader == null) throw new InvalidOperationException("Not connected");
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(5000);
+            var line = await _reader.ReadLineAsync(cts.Token);
+            return line ?? throw new NutException(
+                "Connection closed by server", NutErrorKind.Transient);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new NutException(
+                "Read timed out (5s)", NutErrorKind.Transient);
+        }
+        catch (IOException ex)
+        {
+            throw new NutException(
+                $"Read failed: {ex.Message}", NutErrorKind.Transient, ex);
+        }
+    }
+}
