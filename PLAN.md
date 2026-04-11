@@ -84,6 +84,46 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 ---
 
+## Phase 5: Security Hardening — TODO
+
+Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH and a handful of MEDIUM/LOW items.
+
+### HIGH
+
+- [ ] **5.1 (F1)** Argument injection from NUT `ups.status` into shutdown command line. `ExecuteShutdown` builds the args string by concatenation; quoting is not escaping. Not exploitable in default config (the example script ignores extra args), but becomes RCE-as-root if anyone uses a `bash -c` or wrapper-style shutdown command. **Fix:** use `ProcessStartInfo.ArgumentList.Add(...)` (.NET 8 built-in) instead of string concatenation. Optionally whitelist `ups.status` to known NUT flag tokens.
+
+### MEDIUM
+
+- [ ] **5.2 (F2)** `nutclient.json` file permissions not enforced after install. Contains the NUT password in plaintext. **Fix:** `install.sh` should `chown root:root && chmod 600` after copying; `install.ps1` should set a restrictive ACL (`icacls /inheritance:r /grant SYSTEM:F /grant Administrators:F`).
+- [ ] **5.3 (F3)** Unbounded `ReadLineAsync` in `NutConnection.ReadResponseAsync`. A malicious or MITM'd NUT server could stream gigabytes to OOM the client or stall polls. **Fix:** read into a bounded buffer (8 KB max per line) and throw `NutException` if exceeded.
+- [ ] **5.4 (F4)** systemd unit has no hardening directives — runs as root with full ambient capabilities. **Fix:** add `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `ReadWritePaths=/var/log /opt/nutclient`, `CapabilityBoundingSet=CAP_SYS_BOOT`, `AmbientCapabilities=CAP_SYS_BOOT`, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`. Keep running as root for the `poweroff` capability.
+
+### LOW
+
+- [ ] **5.5 (F5/F6)** Status file and log file get default umask permissions under `/var/log` (world-readable). Neither contains secrets, but UPS topology and host info leak. **Fix:** set 0640 explicitly on creation.
+- [ ] **5.6 (F8)** `Log` and `RotateLogIfNeeded` swallow all exceptions silently. Could hide failures from an attacker manipulating the log path. **Fix:** at minimum log to stderr/_logger on failure; open log files with `FileShare.Read` and explicit non-symlink-follow semantics.
+- [ ] **5.7 (F12)** `Thread.Sleep` during pre-shutdown delay blocks the BackgroundService thread and ignores cancellation. **Fix:** replace with token-aware `Task.Delay`.
+
+### INFO (won't fix unless needed)
+
+- **F7** install.sh doesn't verify what it's copying — informational, mitigated by users running it next to the release artifact
+- **F9** NUT response text echoed verbatim into exception messages — does not leak the password, just attacker-chosen text into client log
+- **F10** No TLS to NUT — explicitly assumed in threat model (trusted LAN), document in SECURITY.md and README
+- **F11** Example shutdown scripts don't validate args — defense in depth, low value since they don't re-feed args to other commands
+
+### What's already done well (per audit)
+
+- `UpsStateMachine` is pure and well-structured, easy to test
+- `BatteryCharge`/`BatteryRuntime` parsed through `int.TryParse` before reaching `ExecuteShutdown` — neutralizes numeric-field injection
+- Status file write is atomic (.tmp + rename)
+- `UseShellExecute = false` — no shell interpretation
+- Config never reloaded hot — local config attackers don't get live re-execution
+- `AccessDenied` is terminal — stops cleanly instead of hammering server
+- 5-second per-read timeout on socket
+- `NutConnection` IDisposable cleanup is thorough
+
+---
+
 ## Safety Points
 
 - 60s battery countdown prevents shutdown on brief flickers
