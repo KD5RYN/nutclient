@@ -72,7 +72,10 @@ public class UpsStateMachine
             _shutdownInitiated = false;
             _currentState = "On Battery";
             events.Add($"POWER LOSS DETECTED — UPS on battery (status: {status})");
-            events.Add($"Shutdown will begin in {_config.ShutdownDelaySeconds} seconds if power is not restored");
+            if (_config.ShutdownDelaySeconds > 0)
+                events.Add($"Shutdown will begin in {_config.ShutdownDelaySeconds} seconds if power is not restored");
+            else
+                events.Add("Shutdown timer disabled — waiting for threshold, LB, or FSD");
             AddHistory(status, "power loss detected");
         }
         // Transition: on battery → AC power restored
@@ -133,8 +136,8 @@ public class UpsStateMachine
             }
         }
 
-        // Timer expiry
-        if (_onBattery && !_shutdownInitiated && _batteryStartTime.HasValue)
+        // Timer expiry — only when timer is enabled (> 0)
+        if (_onBattery && !_shutdownInitiated && _batteryStartTime.HasValue && _config.ShutdownDelaySeconds > 0)
         {
             var elapsed = (_clock.GetUtcNow() - _batteryStartTime.Value).TotalSeconds;
             if (elapsed >= _config.ShutdownDelaySeconds)
@@ -151,6 +154,12 @@ public class UpsStateMachine
                 // Countdown is important — log as event so it always shows during battery
                 events.Add($"On battery for {(int)elapsed}s — shutdown in {remaining}s");
             }
+        }
+        else if (_onBattery && !_shutdownInitiated && _batteryStartTime.HasValue)
+        {
+            // Timer disabled — log how long we've been on battery without a countdown
+            var elapsed = (int)(_clock.GetUtcNow() - _batteryStartTime.Value).TotalSeconds;
+            events.Add($"On battery for {elapsed}s (timer disabled — waiting for threshold, LB, or FSD)");
         }
 
         // Warning-only checks
@@ -241,7 +250,7 @@ public class UpsStateMachine
     public StatusSnapshot GetStatusSnapshot(string serverHost, int serverPort, string upsName)
     {
         int? shutdownIn = null;
-        if (_onBattery && !_shutdownInitiated && _batteryStartTime.HasValue)
+        if (_onBattery && !_shutdownInitiated && _batteryStartTime.HasValue && _config.ShutdownDelaySeconds > 0)
         {
             var elapsed = (_clock.GetUtcNow() - _batteryStartTime.Value).TotalSeconds;
             shutdownIn = Math.Max(0, _config.ShutdownDelaySeconds - (int)elapsed);

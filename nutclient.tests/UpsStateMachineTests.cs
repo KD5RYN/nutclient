@@ -133,6 +133,45 @@ public class UpsStateMachineTests
         Assert.Equal("timer_expired", decision.Shutdown.Reason);
     }
 
+    [Fact]
+    public void TimerDisabled_NoShutdownEvenAfterLongTime()
+    {
+        _config.ShutdownDelaySeconds = 0;
+        var sm = new UpsStateMachine(_config, _clock);
+
+        sm.HandleStatus(Status("OB"));
+        _clock.Advance(TimeSpan.FromHours(1));
+        var decision = sm.HandleStatus(Status("OB"));
+
+        Assert.Null(decision.Shutdown);
+    }
+
+    [Fact]
+    public void TimerDisabled_ThresholdStillTriggers()
+    {
+        _config.ShutdownDelaySeconds = 0;
+        _config.BatteryChargePercent = 30;
+        var sm = new UpsStateMachine(_config, _clock);
+
+        sm.HandleStatus(Status("OB", charge: 50));
+        Assert.False(sm.IsShutdownInitiated);
+
+        var decision = sm.HandleStatus(Status("OB", charge: 25));
+        Assert.NotNull(decision.Shutdown);
+        Assert.Equal("battery_charge", decision.Shutdown.Reason);
+    }
+
+    [Fact]
+    public void TimerDisabled_LBStillTriggersImmediate()
+    {
+        _config.ShutdownDelaySeconds = 0;
+        var sm = new UpsStateMachine(_config, _clock);
+
+        var decision = sm.HandleStatus(Status("OB LB"));
+        Assert.NotNull(decision.Shutdown);
+        Assert.Equal("low_battery", decision.Shutdown.Reason);
+    }
+
     // --- Thresholds ---
 
     [Fact]

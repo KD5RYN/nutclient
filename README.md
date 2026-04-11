@@ -191,7 +191,7 @@ All settings are in `nutclient.json`, which must be in the same directory as the
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `PollIntervalSeconds` | How often to check UPS status | `5` |
-| `ShutdownDelaySeconds` | Seconds to wait on battery before shutting down | `60` |
+| `ShutdownDelaySeconds` | Seconds to wait on battery before shutting down. Set to `0` to disable the timer and rely on thresholds / LB / FSD only. | `60` |
 | `ShutdownCommand` | Program to run for shutdown | Windows: `powershell.exe`, Linux: `/bin/bash` |
 | `ShutdownArguments` | Arguments passed to shutdown command | Path to shutdown script |
 | `LogFile` | Path to the log file | Windows: `C:\Scripts\nutclient.log`, Linux: `/var/log/nutclient.log` |
@@ -213,6 +213,38 @@ All settings are in `nutclient.json`, which must be in the same directory as the
 - `BatteryChargePercent` and `BatteryRuntimeSeconds` only trigger shutdown when the UPS is already on battery (`OB`). They won't trigger during normal charging.
 - `InputVoltageMinWarn` and `LoadPercentWarn` are warning-only — they log but don't trigger shutdown.
 - Set to `null` to disable (default). The basic OB/LB/FSD status-based shutdown works without any thresholds configured.
+
+**Shutdown strategies — pick whichever fits your needs:**
+
+*Default (timer-based):* wait 60 seconds on battery, then shut down regardless of charge level.
+```json
+"ShutdownDelaySeconds": 60,
+"BatteryChargePercent": null,
+"BatteryRuntimeSeconds": null
+```
+
+*Threshold-only (charge %):* disable the timer, shut down when battery drops below a percentage.
+```json
+"ShutdownDelaySeconds": 0,
+"BatteryChargePercent": 30,
+"BatteryRuntimeSeconds": null
+```
+
+*Threshold-only (runtime):* disable the timer, shut down when estimated runtime drops below a threshold.
+```json
+"ShutdownDelaySeconds": 0,
+"BatteryChargePercent": null,
+"BatteryRuntimeSeconds": 180
+```
+
+*Belt-and-suspenders:* use all three — whichever triggers first wins.
+```json
+"ShutdownDelaySeconds": 300,
+"BatteryChargePercent": 20,
+"BatteryRuntimeSeconds": 120
+```
+
+In all cases, `LB` (low battery) and `FSD` (forced shutdown) from the UPS still trigger immediate shutdown as a safety net.
 
 **Dead time:** If the NUT server becomes unreachable while the UPS was last known to be on battery, the client assumes the worst (power is still out, UPS is draining) and triggers shutdown after `DeadTimeSeconds`. This prevents a network failure during a power outage from leaving the server running until the UPS dies.
 
