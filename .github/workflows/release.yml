@@ -56,7 +56,7 @@ jobs:
           zip -r nutclient-${{ matrix.runtime }}.zip ${{ matrix.runtime }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nutclient-${{ matrix.runtime }}
           path: publish/nutclient-${{ matrix.runtime }}.*
