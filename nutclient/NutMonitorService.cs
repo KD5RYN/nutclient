@@ -14,6 +14,11 @@ public class NutMonitorService : BackgroundService
     private readonly string _statusFile;
     private readonly UpsStateMachine _stateMachine;
 
+    // Persistent connection — opened once at startup, held open across polls so
+    // we register as a real monitoring client (visible in `LIST CLIENT`/`NUMLOGINS`).
+    // Recreated on transient failures by the per-poll logic in PollUpsStatusAsync.
+    private NutConnection? _persistentConn;
+
     private static readonly JsonSerializerOptions StatusJsonOptions = new()
     {
         WriteIndented = true,
@@ -95,6 +100,20 @@ public class NutMonitorService : BackgroundService
             }
         }
 
+        // Clean shutdown — send LOGOUT and close the persistent connection
+        // so the server immediately removes us from `LIST CLIENT`. Best-effort,
+        // any failures here are swallowed since we're stopping anyway.
+        if (_persistentConn != null)
+        {
+            try
+            {
+                await _persistentConn.LogoutAsync();
+            }
+            catch { }
+            _persistentConn.Dispose();
+            _persistentConn = null;
+        }
+
         Log("NUT UPS Monitor stopped");
     }
 
@@ -125,38 +144,70 @@ public class NutMonitorService : BackgroundService
 
     private async Task PollUpsStatusAsync(CancellationToken ct)
     {
-        using var conn = new NutConnection(
-            _config.NutServer.Host,
-            _config.NutServer.Port,
-            _config.NutServer.Username,
-            _config.NutServer.Password);
+        var ups = _config.NutServer.UpsName;
 
-        await conn.ConnectAsync(ct);
+        // Ensure we have a live persistent connection. If it's null (first run
+        // or torn down by a previous failure), create + connect + login. Any
+        // failure here propagates as a NutException, which the main loop catches
+        // and feeds to the state machine's OnPollFailure (which handles backoff
+        // and dead-time).
+        if (_persistentConn == null || !_persistentConn.IsConnected)
+        {
+            _persistentConn?.Dispose();
+            _persistentConn = null;
+
+            var conn = new NutConnection(
+                _config.NutServer.Host,
+                _config.NutServer.Port,
+                _config.NutServer.Username,
+                _config.NutServer.Password);
+
+            try
+            {
+                await conn.ConnectAsync(ct);
+                await conn.LoginAsync(ups, ct);
+            }
+            catch
+            {
+                conn.Dispose();
+                throw;
+            }
+
+            _persistentConn = conn;
+        }
 
         try
         {
-            var ups = _config.NutServer.UpsName;
             var data = new UpsData
             {
-                Status = await conn.GetVariableAsync(ups, "ups.status", ct)
+                Status = await _persistentConn.GetVariableAsync(ups, "ups.status", ct)
             };
 
-            data.BatteryCharge = await GetIntVariableAsync(conn, ups, "battery.charge", ct);
-            data.BatteryRuntime = await GetIntVariableAsync(conn, ups, "battery.runtime", ct);
+            data.BatteryCharge = await GetIntVariableAsync(_persistentConn, ups, "battery.charge", ct);
+            data.BatteryRuntime = await GetIntVariableAsync(_persistentConn, ups, "battery.runtime", ct);
 
             if (_config.Monitoring.InputVoltageMinWarn.HasValue)
-                data.InputVoltage = await GetDoubleVariableAsync(conn, ups, "input.voltage", ct);
+                data.InputVoltage = await GetDoubleVariableAsync(_persistentConn, ups, "input.voltage", ct);
             if (_config.Monitoring.LoadPercentWarn.HasValue)
-                data.Load = await GetIntVariableAsync(conn, ups, "ups.load", ct);
-
-            await conn.LogoutAsync();
+                data.Load = await GetIntVariableAsync(_persistentConn, ups, "ups.load", ct);
 
             var decision = _stateMachine.HandleStatus(data);
             await ProcessStatusDecisionAsync(decision, ct);
         }
+        catch (NutException ex) when (ex.Kind == NutErrorKind.Transient)
+        {
+            // Transient errors usually mean the TCP connection is broken or the
+            // server timed out. Tear down so the next poll will reconnect+relogin.
+            _persistentConn.Dispose();
+            _persistentConn = null;
+            throw;
+        }
         catch
         {
-            await conn.LogoutAsync();
+            // Any other unexpected exception — also tear down the connection
+            // defensively to avoid getting stuck on a bad socket.
+            _persistentConn?.Dispose();
+            _persistentConn = null;
             throw;
         }
     }

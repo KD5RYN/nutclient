@@ -115,6 +115,78 @@ public class NutConnectionTests : IAsyncLifetime
         await conn.LogoutAsync(); // should not throw
     }
 
+    // --- LoginAsync (persistent connection registration) ---
+
+    [Fact]
+    public async Task LoginAsync_Success_RegistersClient()
+    {
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+        await conn.LoginAsync("ups1");
+
+        // The mock server tracks IPs that successfully sent LOGIN
+        Assert.Single(_server.RegisteredClients);
+        Assert.Contains("127.0.0.1", _server.RegisteredClients);
+    }
+
+    [Fact]
+    public async Task LoginAsync_DriverNotConnected_ThrowsTransient()
+    {
+        _server.LoginErrorResponse = "ERR DRIVER-NOT-CONNECTED";
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var ex = await Assert.ThrowsAsync<NutException>(() => conn.LoginAsync("ups1"));
+        Assert.Equal(NutErrorKind.Transient, ex.Kind);
+        Assert.Empty(_server.RegisteredClients);
+    }
+
+    [Fact]
+    public async Task LoginAsync_AccessDenied_ThrowsAccessDenied()
+    {
+        _server.LoginErrorResponse = "ERR ACCESS-DENIED";
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var ex = await Assert.ThrowsAsync<NutException>(() => conn.LoginAsync("ups1"));
+        Assert.Equal(NutErrorKind.AccessDenied, ex.Kind);
+    }
+
+    [Fact]
+    public async Task LoginAsync_UnknownUps_ThrowsTransient()
+    {
+        // UNKNOWN-UPS during LOGIN is transient because the server may add the
+        // UPS later (e.g., driver hasn't started yet).
+        _server.LoginErrorResponse = "ERR UNKNOWN-UPS";
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var ex = await Assert.ThrowsAsync<NutException>(() => conn.LoginAsync("ups1"));
+        Assert.Equal(NutErrorKind.Transient, ex.Kind);
+    }
+
+    [Fact]
+    public async Task PersistentConnection_LoginThenMultipleQueries_Works()
+    {
+        // Validates the v1.5.0 persistent-connection model: login once,
+        // then run many GET VAR queries on the same connection.
+        _server.Variables["ups.status"] = "OL";
+        _server.Variables["battery.charge"] = "75";
+
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+        await conn.LoginAsync("ups1");
+
+        for (int i = 0; i < 10; i++)
+        {
+            Assert.Equal("OL", await conn.GetVariableAsync("ups1", "ups.status"));
+            Assert.Equal("75", await conn.GetVariableAsync("ups1", "battery.charge"));
+        }
+
+        // The login should still be tracked
+        Assert.Single(_server.RegisteredClients);
+    }
+
     [Fact]
     public async Task GetVariable_MultipleVars_WorkSequentially()
     {

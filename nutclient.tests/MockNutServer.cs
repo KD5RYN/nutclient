@@ -41,6 +41,12 @@ public class MockNutServer : IAsyncDisposable
     /// </summary>
     public byte[]? RawGetVarResponse { get; set; }
 
+    /// <summary>If set, returns this string instead of OK on LOGIN.</summary>
+    public string? LoginErrorResponse { get; set; }
+
+    /// <summary>Tracks IPs that have sent LOGIN. Cleared on dispose.</summary>
+    public List<string> RegisteredClients { get; } = new();
+
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
     public string Host => "127.0.0.1";
 
@@ -92,6 +98,23 @@ public class MockNutServer : IAsyncDisposable
                     {
                         client.Close();
                         return;
+                    }
+                }
+                else if (line.StartsWith("LOGIN "))
+                {
+                    if (LoginErrorResponse != null)
+                    {
+                        await writer.WriteLineAsync(LoginErrorResponse);
+                    }
+                    else
+                    {
+                        var clientEp = (System.Net.IPEndPoint?)client.Client.RemoteEndPoint;
+                        if (clientEp != null)
+                        {
+                            lock (RegisteredClients)
+                                RegisteredClients.Add(clientEp.Address.ToString());
+                        }
+                        await writer.WriteLineAsync("OK");
                     }
                 }
                 else if (line.StartsWith("GET VAR "))

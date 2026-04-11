@@ -99,6 +99,45 @@ public class NutConnection : IDisposable
             throw new NutException($"PASSWORD rejected: {resp}", NutErrorKind.AccessDenied);
     }
 
+    /// <summary>
+    /// Register this client as an active monitor of the named UPS by sending
+    /// the NUT LOGIN command. This makes the client visible in `LIST CLIENT`
+    /// and `NUMLOGINS` queries on the server, and is the standard NUT mechanism
+    /// for tracking who's monitoring what. Call this once after ConnectAsync
+    /// for the persistent-connection lifecycle.
+    /// </summary>
+    public async Task LoginAsync(string upsName, CancellationToken ct = default)
+    {
+        await SendCommandAsync($"LOGIN {upsName}");
+        var resp = await ReadResponseAsync(ct);
+
+        if (resp.StartsWith("OK"))
+            return;
+
+        if (resp.StartsWith("ERR"))
+        {
+            var errCode = resp.Length > 4 ? resp.Substring(4).Trim() : resp;
+
+            // Classify the LOGIN response. ACCESS-DENIED is fatal (terminal),
+            // DRIVER-NOT-CONNECTED / DATA-STALE / UNKNOWN-UPS are transient
+            // (the server may not have the UPS ready yet but might soon).
+            var kind = errCode switch
+            {
+                "ACCESS-DENIED" => NutErrorKind.AccessDenied,
+                "UNKNOWN-UPS" => NutErrorKind.Transient,
+                "DRIVER-NOT-CONNECTED" => NutErrorKind.Transient,
+                "DATA-STALE" => NutErrorKind.Transient,
+                _ => NutErrorKind.Protocol,
+            };
+
+            throw new NutException($"LOGIN rejected: {errCode}", kind);
+        }
+
+        throw new NutException(
+            $"Unexpected response to LOGIN: {resp}",
+            NutErrorKind.Protocol);
+    }
+
     public async Task<string> GetVariableAsync(string upsName, string variable, CancellationToken ct = default)
     {
         await SendCommandAsync($"GET VAR {upsName} {variable}");

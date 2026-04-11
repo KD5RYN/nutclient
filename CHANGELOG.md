@@ -4,6 +4,34 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [v1.5.0] - 2026-04-11
+
+Persistent connection release. NutClient now connects once at startup and holds the TCP connection open across polls, sending the NUT `LOGIN` command after authentication. This makes NutClient visible in the NUT server's `LIST CLIENT` and `NUMLOGINS` queries — meaning monitoring dashboards can now show "which clients are checking in" properly.
+
+### Changed
+- **NutClient now uses persistent TCP connections.** Previously each poll opened a fresh TCP connection, sent commands, and closed it (~50ms per cycle). Now the connection is opened once at startup, the client sends `LOGIN <upsname>` to register as a real monitoring client, and subsequent polls reuse the same connection. The connection is torn down and reopened only on transient errors (broken socket, server restart, etc.). On graceful shutdown the client sends `LOGOUT` and closes the socket cleanly.
+- This is fully backwards-compatible with existing NUT servers — `LOGIN` is part of the standard NUT protocol and is what `upsmon` uses.
+
+### Why this matters
+- The NUT server now shows NutClient in `upsd`'s session tracking. From the server, you can run:
+  ```
+  (echo "USERNAME mon"; echo "PASSWORD pw"; echo "LIST CLIENT ups1"; echo "LOGOUT") | nc -w 3 localhost 3493
+  ```
+  and see each connected NutClient by IP. This is what makes the upcoming server room dashboard "Connected Clients" section possible.
+- Slightly more efficient: one TCP/auth handshake at startup instead of one per poll.
+- More accurate connection tracking — `LIST CLIENT` always returns the current set, not a "you happened to query at the right millisecond" snapshot.
+
+### Added
+- `NutConnection.LoginAsync(string upsName, ...)` — sends `LOGIN <ups>` and classifies the response (OK / DRIVER-NOT-CONNECTED / UNKNOWN-UPS / ACCESS-DENIED).
+- 5 new tests: `LoginAsync_Success_RegistersClient`, `LoginAsync_DriverNotConnected_ThrowsTransient`, `LoginAsync_AccessDenied_ThrowsAccessDenied`, `LoginAsync_UnknownUps_ThrowsTransient`, `PersistentConnection_LoginThenMultipleQueries_Works`.
+- `MockNutServer` now handles `LOGIN <ups>` and tracks registered clients for testing.
+
+### Behavior preserved
+- Power loss detection, battery countdown, dead time, threshold-based shutdowns — all unchanged
+- Backoff on transient failures still works (each transient error tears down the connection so the next poll reconnects fresh)
+- Logging, status file, all other features unchanged
+- All 84 existing tests still pass plus the 5 new ones — **89 total**
+
 ## [v1.4.1] - 2026-04-11
 
 Patch release. Cleaner error messages when the config file is missing or malformed, plus tested edge cases against a live test environment.
@@ -126,7 +154,8 @@ Initial public release.
 - Pre-built releases for `win-x64`, `linux-x64`, `linux-arm64`
 - 52 unit and integration tests with mock NUT server
 
-[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.5.0...HEAD
+[v1.5.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.5.0
 [v1.4.1]: https://github.com/KD5RYN/nutclient/releases/tag/v1.4.1
 [v1.4.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.4.0
 [v1.3.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.3.0
