@@ -316,7 +316,7 @@ What the example does:
 - Includes commented-out examples for stopping Docker containers and systemd services
 - Runs `poweroff`
 
-Must be executable: `chmod +x graceful-shutdown.sh`
+> `install.sh` automatically sets the executable bit when it copies the script. If you write your own shutdown script from scratch, run `chmod +x graceful-shutdown.sh` yourself.
 
 ---
 
