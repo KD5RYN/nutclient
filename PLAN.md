@@ -88,7 +88,7 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH (now fixed) and a handful of MEDIUM/LOW items.
 
-**Progress:** 1 of 7 done (HIGH item F1 fixed in commit a7671c3).
+**Progress:** 2 of 7 done (F1 in commit a7671c3, F2 in commit TBD).
 
 ### HIGH
 
@@ -96,7 +96,7 @@ Findings from a focused security audit. Threat model: NutClient runs as root/SYS
 
 ### MEDIUM
 
-- [ ] **5.2 (F2)** `nutclient.json` file permissions not enforced after install. Contains the NUT password in plaintext. **Fix:** `install.sh` should `chown root:root && chmod 600` after copying; `install.ps1` should set a restrictive ACL (`icacls /inheritance:r /grant SYSTEM:F /grant Administrators:F`).
+- [x] **5.2 (F2)** `nutclient.json` file permissions not enforced after install — **FIXED.** `install.sh` now runs `chown root:root && chmod 600` on the config file (applied unconditionally so upgrades from older installs also fix the perms). `install.ps1` runs `icacls /inheritance:r /grant SYSTEM:F /grant Administrators:F` to strip inherited Users:Read and grant only SYSTEM and Administrators. Also added a runtime check in NutMonitorService startup that warns in the log if the config file is group/other-readable on Linux — defense in depth for users who installed manually or with an older script. Verified end-to-end: warning fires with 644, silent with 600.
 - [ ] **5.3 (F3)** Unbounded `ReadLineAsync` in `NutConnection.ReadResponseAsync`. A malicious or MITM'd NUT server could stream gigabytes to OOM the client or stall polls. **Fix:** read into a bounded buffer (8 KB max per line) and throw `NutException` if exceeded.
 - [ ] **5.4 (F4)** systemd unit has no hardening directives — runs as root with full ambient capabilities. **Fix:** add `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `ReadWritePaths=/var/log /opt/nutclient`, `CapabilityBoundingSet=CAP_SYS_BOOT`, `AmbientCapabilities=CAP_SYS_BOOT`, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`. Keep running as root for the `poweroff` capability.
 

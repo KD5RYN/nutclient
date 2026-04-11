@@ -44,6 +44,11 @@ public class NutMonitorService : BackgroundService
         Log($"Shutdown delay: {_config.Monitoring.ShutdownDelaySeconds}s");
         Log($"Shutdown command: {_config.Monitoring.ShutdownCommand} {_config.Monitoring.ShutdownArguments}");
 
+        // SECURITY: warn if the config file (which contains the NUT password) is
+        // readable by group or other on Linux. install.sh should set 0600, but a
+        // user who installed manually or with an older script may have looser perms.
+        WarnIfConfigFileIsTooLoose();
+
         while (!stoppingToken.IsCancellationRequested)
         {
             if (_stateMachine.IsAccessDenied)
@@ -302,6 +307,37 @@ public class NutMonitorService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning("Failed to write status file: {Message}", ex.Message);
+        }
+    }
+
+    private void WarnIfConfigFileIsTooLoose()
+    {
+        // Only check on Unix — Windows uses ACLs which are checked elsewhere.
+        if (OperatingSystem.IsWindows()) return;
+
+        try
+        {
+            var configPath = Path.Combine(AppContext.BaseDirectory, "nutclient.json");
+            if (!File.Exists(configPath)) return;
+
+            var mode = File.GetUnixFileMode(configPath);
+
+            // Check if group or other has any access (read, write, or execute).
+            const UnixFileMode groupOrOther =
+                UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+            if ((mode & groupOrOther) != 0)
+            {
+                var octal = Convert.ToString((int)mode, 8);
+                Log($"WARNING: {configPath} is readable by group/other (mode: {octal})");
+                Log("WARNING: This file contains the NUT password. Run: sudo chmod 600 " + configPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Don't fail startup over a permission check.
+            _logger.LogWarning("Could not check config file permissions: {Message}", ex.Message);
         }
     }
 

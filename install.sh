@@ -82,6 +82,12 @@ else
     echo "Keeping existing $INSTALL_DIR/nutclient.json"
 fi
 
+# SECURITY: lock down config file permissions — it contains the NUT password
+# in plaintext. Only root should be able to read it.
+# Applied unconditionally so upgrading from an older install also fixes perms.
+chown root:root "$INSTALL_DIR/nutclient.json"
+chmod 600 "$INSTALL_DIR/nutclient.json"
+
 # Copy shutdown script — don't overwrite existing
 if [ ! -f "$SCRIPT_DIR/graceful-shutdown.sh" ]; then
     cp "$SOURCE_DIR/scripts/graceful-shutdown.sh" "$SCRIPT_DIR/graceful-shutdown.sh"

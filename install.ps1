@@ -48,6 +48,14 @@ if (-not (Test-Path "$InstallDir\nutclient.json")) {
     Write-Host "Keeping existing $InstallDir\nutclient.json"
 }
 
+# SECURITY: lock down config file permissions — it contains the NUT password
+# in plaintext. Strip inherited ACLs (Users get Read by default on C:\) and
+# grant only SYSTEM and Administrators full control.
+# Applied unconditionally so upgrading from an older install also fixes perms.
+$configPath = "$InstallDir\nutclient.json"
+icacls $configPath /inheritance:r /grant "SYSTEM:(F)" /grant "Administrators:(F)" | Out-Null
+Write-Host "Restricted $configPath to SYSTEM and Administrators only"
+
 # Copy shutdown script — don't overwrite existing
 if (-not (Test-Path "$ScriptsDir\graceful-shutdown.ps1")) {
     Copy-Item -Path "$SourceDir\scripts\graceful-shutdown.ps1" -Destination "$ScriptsDir\graceful-shutdown.ps1"
