@@ -68,12 +68,12 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 ---
 
-## Phase 3: Production Rollout — IN PROGRESS
+## Phase 3: Production Rollout — DONE (initial)
 
 - [x] **3.0** v1.3.0 released with Phase 2 fixes (startup messaging, Windows retry-forever, install instructions, CI workflow)
 - [x] **3.0.1** Upgrade test verified — upgrading from v1.2.0 → v1.3.0 preserves nutclient.json and customized shutdown scripts, restarts the service cleanly
-- [ ] **3.1** Deploy to all production servers via install script
-- [ ] **3.2** End-to-end test with real UPS unplug
+- [x] **3.1** Initial production rollout — deployed to one Windows and one Linux server. More servers can be added incrementally as needed.
+- [ ] **3.2** End-to-end test with a real UPS unplug on a production server (deferred — can be done opportunistically during the next planned outage)
 
 ---
 
