@@ -51,9 +51,13 @@ Download the latest release for your platform from [GitHub Releases](../../relea
 ```bash
 tar xzf nutclient-linux-x64.tar.gz
 cd linux-x64
-nano nutclient.json              # set NUT server host, UPS name, credentials
-sudo ./install.sh
+sudo ./install.sh                            # installs to /opt/nutclient
+sudo nano /opt/nutclient/nutclient.json      # set NUT server host, UPS name, credentials
+sudo systemctl start nutclient               # start the service
+sudo systemctl status nutclient              # verify it's running
 ```
+
+> `install.sh` copies `nutclient.json.linux-example` to `/opt/nutclient/nutclient.json` (the Linux template, not the Windows-defaults `nutclient.json` in the archive). It registers the service but doesn't start it — edit the config first, then start manually. On reboot it'll start automatically.
 
 > **Distro compatibility:** `install.sh` is written for **Debian-based distros** (Debian, Ubuntu, Raspberry Pi OS) and has been tested there. It should also work on any **systemd-based distro** (RHEL, CentOS, Fedora, Rocky, Alma, openSUSE, Arch) since it only uses `systemctl` and standard FHS paths. A few notes:
 >
@@ -65,12 +69,13 @@ sudo ./install.sh
 ```powershell
 Expand-Archive nutclient-win-x64.zip -DestinationPath C:\NutClient
 cd C:\NutClient\win-x64
-notepad nutclient.json           # set NUT server host, UPS name, credentials
-powershell -ExecutionPolicy Bypass -File install.ps1
-Start-Service NutUpsMonitor      # service is installed but not started automatically — start it manually the first time
+powershell -ExecutionPolicy Bypass -File install.ps1   # installs to C:\NutClient
+notepad C:\NutClient\nutclient.json                    # set NUT server host, UPS name, credentials
+Start-Service NutUpsMonitor                            # start the service
+Get-Service NutUpsMonitor                              # verify it's running
 ```
 
-> **Note:** `install.ps1` is not code-signed, so PowerShell's default execution policy will block it. Use `-ExecutionPolicy Bypass` as shown above, or run `Unblock-File install.ps1` first. The install script registers the Windows service but doesn't start it — you need to run `Start-Service NutUpsMonitor` manually the first time (or edit the config first, then start). On subsequent boots the service starts automatically.
+> **Note:** `install.ps1` is not code-signed, so PowerShell's default execution policy will block it. Use `-ExecutionPolicy Bypass` as shown above, or run `Unblock-File install.ps1` first. The install script registers the Windows service but doesn't start it — edit the config first, then start manually the first time. On subsequent boots the service starts automatically.
 
 The install scripts will:
 - Copy the binary, config, and shutdown script to the right locations
@@ -142,6 +147,34 @@ cat /var/log/nutclient-status.json                     # quick status
 ```
 
 To uninstall: `sudo systemctl disable --now nutclient && sudo rm -rf /opt/nutclient /etc/systemd/system/nutclient.service`
+
+### Modifying Settings After Install
+
+The config file is at:
+- **Linux:** `/opt/nutclient/nutclient.json`
+- **Windows:** `C:\NutClient\nutclient.json`
+
+After editing, restart the service to pick up the changes:
+
+**Linux:**
+```bash
+sudo nano /opt/nutclient/nutclient.json
+sudo systemctl restart nutclient
+sudo systemctl status nutclient    # verify it's still running
+```
+
+**Windows:**
+```powershell
+notepad C:\NutClient\nutclient.json
+Restart-Service NutUpsMonitor
+Get-Service NutUpsMonitor          # verify it's still running
+```
+
+`install.sh` and `install.ps1` both **preserve your existing config** if you re-run them later (e.g., for an upgrade). They only create a fresh template if no config exists at the destination.
+
+If the service fails to start after a config change, check the log for parse errors:
+- Linux: `journalctl -u nutclient -n 50`
+- Windows: `Get-Content C:\Scripts\nutclient.log -Tail 50`
 
 ---
 
