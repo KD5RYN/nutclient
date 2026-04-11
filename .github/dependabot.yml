@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # NuGet packages
+  # NuGet packages — production project (/nutclient)
   - package-ecosystem: "nuget"
     directory: "/nutclient"
     schedule:
@@ -8,7 +8,13 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    ignore:
+      # Microsoft.Extensions.Hosting.* major bumps target newer .NET versions
+      # than our net8.0 LTS target. Skip until we explicitly upgrade .NET.
+      - dependency-name: "Microsoft.Extensions.Hosting.*"
+        update-types: ["version-update:semver-major"]
 
+  # NuGet packages — test project (/nutclient.tests)
   - package-ecosystem: "nuget"
     directory: "/nutclient.tests"
     schedule:
@@ -16,6 +22,17 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    ignore:
+      # Microsoft.Extensions.TimeProvider.Testing major bumps target newer .NET
+      # versions than our net8.0 LTS target. Skip until we upgrade .NET.
+      - dependency-name: "Microsoft.Extensions.TimeProvider.Testing"
+        update-types: ["version-update:semver-major"]
+      # xunit 3 has breaking API changes. We'll upgrade deliberately as a
+      # separate work item, not via Dependabot.
+      - dependency-name: "xunit"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "xunit.runner.visualstudio"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
