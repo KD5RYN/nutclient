@@ -179,9 +179,15 @@ public class NutMonitorService : BackgroundService
 
     private void ExecuteShutdown(string reason, UpsData data)
     {
+        // SECURITY: data.Status comes from the NUT server, which is network-controlled.
+        // It gets passed to the shutdown command line, so a malicious or MITM'd server
+        // could try to break out of the quoting and inject extra arguments. Sanitize it
+        // to a whitelist of known NUT status flags before letting it anywhere near argv.
+        // BatteryCharge / BatteryRuntime are already int? so they're safe.
+        var safeStatus = SanitizeUpsStatus(data.Status);
         var charge = data.BatteryCharge?.ToString() ?? "-1";
         var runtime = data.BatteryRuntime?.ToString() ?? "-1";
-        var statusQuoted = $"\"{data.Status}\"";
+        var statusQuoted = $"\"{safeStatus}\"";
 
         // Run pre-shutdown hook if configured
         if (!string.IsNullOrEmpty(_config.Monitoring.PreShutdownCommand))
@@ -200,6 +206,51 @@ public class NutMonitorService : BackgroundService
         var fullArgs = $"{_config.Monitoring.ShutdownArguments} {reason} {charge} {runtime} {statusQuoted}";
         Log($"EXECUTING SHUTDOWN: {_config.Monitoring.ShutdownCommand} {fullArgs}");
         RunProcess(_config.Monitoring.ShutdownCommand, fullArgs, "Shutdown");
+    }
+
+    /// <summary>
+    /// Whitelist a NUT ups.status string to known status flag tokens only.
+    /// Anything that isn't a recognized NUT flag is dropped. This prevents a
+    /// malicious or MITM'd NUT server from injecting shell metacharacters or
+    /// extra command-line arguments into the shutdown command via the status
+    /// field.
+    /// See: https://networkupstools.org/docs/developer-guide.chunked/apas02.html
+    /// </summary>
+    internal static string SanitizeUpsStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return "UNKNOWN";
+
+        // Canonical NUT status flags. Anything not in this set is silently dropped.
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "OL",       // online (on AC)
+            "OB",       // on battery
+            "LB",       // low battery
+            "HB",       // high battery
+            "RB",       // replace battery
+            "CHRG",     // charging
+            "DISCHRG",  // discharging
+            "BYPASS",   // on bypass
+            "CAL",      // calibrating
+            "OFF",      // off
+            "OVER",     // overload
+            "TRIM",     // trimming voltage
+            "BOOST",    // boosting voltage
+            "FSD",      // forced shutdown
+            "ALARM",    // alarm
+            "TEST",     // test in progress
+            "ECO",      // economy mode
+            "COMM",     // comms ok
+            "NOCOMM",   // comms lost
+        };
+
+        var clean = status
+            .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(t => allowed.Contains(t))
+            .ToArray();
+
+        return clean.Length > 0 ? string.Join(" ", clean) : "UNKNOWN";
     }
 
     private void RunProcess(string command, string arguments, string label)

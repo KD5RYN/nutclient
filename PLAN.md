@@ -90,7 +90,7 @@ Findings from a focused security audit. Threat model: NutClient runs as root/SYS
 
 ### HIGH
 
-- [ ] **5.1 (F1)** Argument injection from NUT `ups.status` into shutdown command line. `ExecuteShutdown` builds the args string by concatenation; quoting is not escaping. Not exploitable in default config (the example script ignores extra args), but becomes RCE-as-root if anyone uses a `bash -c` or wrapper-style shutdown command. **Fix:** use `ProcessStartInfo.ArgumentList.Add(...)` (.NET 8 built-in) instead of string concatenation. Optionally whitelist `ups.status` to known NUT flag tokens.
+- [x] **5.1 (F1)** Argument injection from NUT `ups.status` into shutdown command line — **FIXED.** Added `SanitizeUpsStatus()` that whitelists status tokens to known NUT flags only (OL, OB, LB, FSD, CHRG, etc.) and drops everything else. A malicious server returning `"OB LB EVIL_INJECTION rm"` now reaches the shutdown script as `"OB LB"`. Verified end-to-end against the dummy UPS server with a logging shutdown script. 15 unit tests cover the sanitization including quote-breakout, shell metacharacters, backticks, newlines, and case-sensitivity.
 
 ### MEDIUM
 
