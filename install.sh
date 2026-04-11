@@ -4,6 +4,34 @@
 #
 # Installs NutClient to /opt/nutclient and sets up a systemd service.
 # If nutclient.json already exists at the destination, it will NOT be overwritten.
+#
+# TESTED ON: Debian 12, Raspberry Pi OS (Debian-based)
+#
+# SHOULD WORK ON any systemd-based Linux distro:
+#   Debian, Ubuntu, Raspberry Pi OS, RHEL, CentOS, Fedora, Rocky, Alma,
+#   openSUSE, Arch — the script only uses systemctl and standard FHS paths.
+#
+# NOTES FOR NON-DEBIAN DISTROS:
+#
+#   RHEL / CentOS / Fedora / Rocky / Alma:
+#     - SELinux may block the shutdown script execution. If the service fails
+#       to start or run the shutdown command, check with: sudo ausearch -m avc
+#       To temporarily allow: sudo setenforce 0 (test only, not for production).
+#       For a permanent fix, create an SELinux policy module.
+#     - If the log directory /var/log is locked down, set LogFile in
+#       nutclient.json to a writable path like /opt/nutclient/nutclient.log.
+#
+#   Synology DSM:
+#     - Synology has its own init system and pre-installed NUT. This script
+#       won't work as-is. Manual install: copy NutClient to /usr/local/bin,
+#       create an upstart/systemd unit, or use Task Scheduler to start it.
+#
+#   Alpine / OpenRC-based distros:
+#     - This script requires systemd. Alpine and other OpenRC distros need
+#       a manual install: copy binary + config, create an OpenRC init script.
+#
+#   Void / runit:
+#     - Similar to Alpine — needs a manual runit service directory setup.
 
 set -e
 
@@ -14,6 +42,14 @@ SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run as root: sudo ./install.sh"
+    exit 1
+fi
+
+if ! command -v systemctl >/dev/null 2>&1; then
+    echo "ERROR: systemctl not found — this script requires systemd."
+    echo ""
+    echo "For non-systemd distros (Alpine, Void, Synology, old Gentoo, etc.)"
+    echo "you'll need to install manually. See the header of this script for notes."
     exit 1
 fi
 

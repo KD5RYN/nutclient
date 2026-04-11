@@ -52,6 +52,12 @@ nano nutclient.json              # set NUT server host, UPS name, credentials
 sudo ./install.sh
 ```
 
+> **Distro compatibility:** `install.sh` is written for **Debian-based distros** (Debian, Ubuntu, Raspberry Pi OS) and has been tested there. It should also work on any **systemd-based distro** (RHEL, CentOS, Fedora, Rocky, Alma, openSUSE, Arch) since it only uses `systemctl` and standard FHS paths. A few notes:
+>
+> - **RHEL / Fedora family:** SELinux may block the shutdown script or log writes. If the service fails, check `sudo ausearch -m avc` for denials. For testing you can temporarily run `sudo setenforce 0`; for production, create a proper SELinux policy or set `LogFile` in `nutclient.json` to a writable path like `/opt/nutclient/nutclient.log`.
+> - **Synology DSM:** has pre-installed NUT and its own init system — `install.sh` won't work directly. Manual install: copy `NutClient` to `/usr/local/bin` and create a startup entry via Task Scheduler or synoservice.
+> - **Alpine / OpenRC / runit / Void:** no systemd, so `install.sh` bails out early. You'll need to write a distro-native service unit (OpenRC init script, runit sv directory, etc.) and copy the binary + config manually.
+
 **Windows** (run PowerShell as Administrator):
 ```powershell
 Expand-Archive nutclient-win-x64.zip -DestinationPath C:\NutClient
