@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/KD5RYN/nutclient/discussions
+    about: Have a question or want to discuss something? Open a discussion (or use a GitHub issue if discussions are not enabled).

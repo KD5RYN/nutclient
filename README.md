@@ -88,7 +88,7 @@ Requires [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ```bash
 # Clone
-git clone https://github.com/your-org/nutclient.git
+git clone https://github.com/KD5RYN/nutclient.git
 cd nutclient
 
 # Build
