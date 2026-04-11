@@ -1,5 +1,8 @@
 # NutClient — Cross-Platform NUT UPS Monitor
 
+[![CI](https://github.com/KD5RYN/nutclient/actions/workflows/ci.yml/badge.svg)](https://github.com/KD5RYN/nutclient/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A .NET 8 service that monitors a NUT (Network UPS Tools) server and runs a shutdown script when UPS power is lost. Works on Windows and Linux.
 
 ## How It Works
@@ -450,13 +453,15 @@ dotnet test nutclient.tests --filter "FullyQualifiedName~TimerExpiry_TriggersShu
 
 ### Test Coverage
 
-**52 tests** across 3 files:
+**55 tests** across 3 files:
 
 | File | Tests | What's covered |
 |------|-------|----------------|
 | `NutConnectionTests` | 10 | TCP connection, auth success/failure, variable queries, error classification (Transient vs AccessDenied vs Protocol), server disconnect |
-| `UpsStateMachineTests` | 35 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once |
-| `BackoffTests` | 7 | Exponential backoff formula, max cap at 60s, reset after success |
+| `UpsStateMachineTests` | 36 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, disabled timer (ShutdownDelaySeconds=0), battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once |
+| `BackoffTests` | 9 | Exponential backoff formula (parameterized), max cap at 60s, reset after success |
+
+Tests run automatically on every push and pull request via GitHub Actions ([ci.yml](.github/workflows/ci.yml)). Contributors can see test results directly on their PRs.
 
 Tests use:
 - **`MockNutServer`** — A real TCP listener on localhost (random port) that speaks the NUT text protocol. Tests configure what responses it returns.
