@@ -109,7 +109,7 @@ C:\NutClient\NutClient.exe
 You should see output like:
 ```
 2026-04-10 14:30:41 NUT UPS Monitor started
-2026-04-10 14:30:41 Monitoring ups1@necprojpi3.necproj.com:3493
+2026-04-10 14:30:41 Monitoring ups1@your-nut-server.example.com:3493
 ```
 
 With `LogLevel: "events"` (default), it will be silent during normal polling and only log when something happens. Press Ctrl+C to stop.
@@ -149,11 +149,11 @@ All settings are in `nutclient.json`, which must be in the same directory as the
 ```json
 {
   "NutServer": {
-    "Host": "necprojpi3.necproj.com",
+    "Host": "your-nut-server.example.com",
     "Port": 3493,
     "UpsName": "ups1",
-    "Username": "upsmon_secondary",
-    "Password": "j0@tm0n"
+    "Username": "monuser",
+    "Password": "CHANGE_ME"
   },
   "Monitoring": {
     "PollIntervalSeconds": 5,
@@ -335,7 +335,7 @@ cat /var/log/nutclient-status.json
 Example output:
 ```json
 {
-  "server": "necprojpi3.necproj.com:3493",
+  "server": "your-nut-server.example.com:3493",
   "upsName": "ups1",
   "state": "Online",
   "currentStatus": "OL",

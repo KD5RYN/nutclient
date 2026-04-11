@@ -1,10 +1,10 @@
 {
   "NutServer": {
-    "Host": "necprojpi3.necproj.com",
+    "Host": "your-nut-server.example.com",
     "Port": 3493,
     "UpsName": "ups1",
-    "Username": "upsmon_secondary",
-    "Password": "j0@tm0n"
+    "Username": "monuser",
+    "Password": "CHANGE_ME"
   },
   "Monitoring": {
     "PollIntervalSeconds": 5,
