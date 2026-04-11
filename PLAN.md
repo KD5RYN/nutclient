@@ -77,10 +77,17 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 ---
 
-## Phase 4: Hardening — TODO
+## Phase 4: Hardening — IN PROGRESS
 
-- [ ] **4.1** Test edge cases (rapid flicker, server unreachable during outage)
-- [ ] **4.2** Configure Hyper-V VM auto-start on each host (if applicable)
+- [x] **4.1** Test edge cases — **DONE.** Verified 6 scenarios against the live test environment (nutpi + dummyups):
+  - **Rapid flicker:** 3 cycles of OL↔OB within ~30s. State machine handles each transition cleanly, never triggers shutdown.
+  - **NUT server restart:** Stop nut-server while client is connected, wait 20s, restart. Client logs poll errors with backoff (5s/10s/20s), then "Connection restored after N failed poll(s)".
+  - **Server back JUST before dead time:** Server unreachable for ~30s while client is on battery, comes back. Client correctly resumes without false shutdown.
+  - **SIGTERM mid-countdown:** Sent SIGTERM at "On battery for 5s". Process exited cleanly in 28ms. Shutdown script never called (correct cancellation).
+  - **Malformed nutclient.json:** Found a UX issue — exception bubbled up as a 50-line stack trace. **FIXED in Program.cs:** wrapped JSON parsing in try/catch, prints clean error and exits with code 1.
+  - **Missing nutclient.json:** Same UX issue, same fix.
+  - **Unwritable log file:** F8 fix works perfectly — `Log file write failed` warning fires once (throttled), service keeps running with events going to stdout/journalctl.
+- [ ] **4.2** Configure Hyper-V VM auto-start on each host (if applicable) — operational task, not a NutClient code change. Defer to ops.
 
 ---
 
