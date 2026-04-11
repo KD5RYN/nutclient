@@ -52,9 +52,9 @@ Custom .NET 8 NUT client for graceful server shutdown on UPS power loss. Designe
 
 ---
 
-## Phase 2: Testing with Dedicated Test UPS — IN PROGRESS
+## Phase 2: Testing with Dedicated Test UPS — DONE
 
-Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2.
+Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-ups` driver for simulating arbitrary status values.
 
 - [x] **2.1** Set up test NUT server (Raspberry Pi + APC Back-UPS)
 - [x] **2.2** Verify polling in console mode
@@ -63,8 +63,8 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2.
 - [x] **2.5** Simulate power loss — verified 60s countdown and shutdown with correct args
 - [x] **2.6** Test power flicker — verified shutdown cancels on restore
 - [x] **2.6.1** Set up `dummy-ups` driver on test NUT server for safe simulation of LB/FSD/dead time
-- [ ] **2.7** Test LB/FSD — verify immediate shutdown (no 60s wait)
-- [ ] **2.8** Test dead time — kill NUT server while on battery, verify shutdown after 30s
+- [x] **2.7** Test LB/FSD — verified immediate shutdown for both `OB LB` and `FSD` (no 60s wait)
+- [x] **2.8** Test dead time — verified shutdown 30s after server unreachable while on battery. Confirmed regular timer pauses when polls fail (timer check only runs in HandleStatus on successful poll), making dead time the essential safety net for network outages during power failures.
 
 ---
 
