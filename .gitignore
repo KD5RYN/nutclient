@@ -3,3 +3,10 @@ nutclient/obj/
 nutclient/publish*/
 nutclient.tests/bin/
 nutclient.tests/obj/
+
+# Stray Windows-path filenames that get created if you accidentally run
+# the binary on Linux with the default Windows config (LogFile/StatusFile
+# are absolute Windows paths and become literal filenames on Linux).
+C:\\
+*.log
+*.status.json
