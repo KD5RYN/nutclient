@@ -38,17 +38,26 @@ Custom .NET 8 NUT client for graceful server shutdown on UPS power loss. Designe
 - [x] LogLevel config: "events" (default, quiet) vs "all" (every poll)
 - [x] Example shutdown scripts (PowerShell + bash) with param blocks
 - [x] State machine extracted for testability
-- [x] **60 unit/integration tests** with mock NUT server
+- [x] **89 unit/integration tests** with mock NUT server
 - [x] Full README with setup, config, developer docs
 - [x] Install scripts for Linux and Windows (preserve existing config on upgrade)
 - [x] Linux install: clear distro compatibility notes (Debian-tested, systemd check)
 - [x] Windows service: retries forever (10s, 30s, 5min, then every 5min)
-- [x] Linux systemd: `Restart=always` with 10s delay
+- [x] Linux systemd: `Restart=always` with 10s delay + 7 conservative hardening directives
 - [x] GitHub Actions CI — auto-build + release on tag push (win-x64, linux-x64, linux-arm64)
 - [x] CI workflow runs tests on every push and PR
 - [x] Sanitized config templates and docs (no personal info)
 - [x] MIT License
-- [x] **v1.2.0 release published** (latest, sanitized)
+- [x] Persistent NUT connection — `LOGIN <ups>` registers client with server, visible in `LIST CLIENT`
+- [x] Clean error messages on missing/malformed config (no stack traces)
+- [x] **v1.5.0 released** (current). Release history:
+  - v1.0.0 — initial
+  - v1.1.0 — `ShutdownDelaySeconds: 0` to disable timer
+  - v1.2.0 — sanitized configs
+  - v1.3.0 — startup messaging, CI workflow, Windows retry-forever, install fixes
+  - v1.4.0 — security hardening (F1 sanitize, F2 perms, F3 bounded reader, F4 systemd, F5/F6/F8/F12)
+  - v1.4.1 — clean error messages for bad config
+  - v1.5.0 — **persistent NUT connection with LOGIN registration**
 
 ---
 
