@@ -62,6 +62,7 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2.
 - [x] **2.4** Install as Windows service on jldev, verify auto-start on reboot
 - [x] **2.5** Simulate power loss — verified 60s countdown and shutdown with correct args
 - [x] **2.6** Test power flicker — verified shutdown cancels on restore
+- [x] **2.6.1** Set up `dummy-ups` driver on test NUT server for safe simulation of LB/FSD/dead time
 - [ ] **2.7** Test LB/FSD — verify immediate shutdown (no 60s wait)
 - [ ] **2.8** Test dead time — kill NUT server while on battery, verify shutdown after 30s
 
