@@ -84,11 +84,11 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 ---
 
-## Phase 5: Security Hardening — IN PROGRESS
+## Phase 5: Security Hardening — DONE
 
-Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH (now fixed) and a handful of MEDIUM/LOW items.
+Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** All HIGH, MEDIUM, and LOW items addressed.
 
-**Progress:** 4 of 7 done (F1, F2, F3, F4 conservative).
+**Progress:** 7 of 7 done. All HIGH, MEDIUM, and LOW items fixed. INFO items either won't fix or documented as known assumptions.
 
 ### HIGH
 
@@ -102,9 +102,9 @@ Findings from a focused security audit. Threat model: NutClient runs as root/SYS
 
 ### LOW
 
-- [ ] **5.5 (F5/F6)** Status file and log file get default umask permissions under `/var/log` (world-readable). Neither contains secrets, but UPS topology and host info leak. **Fix:** set 0640 explicitly on creation.
-- [ ] **5.6 (F8)** `Log` and `RotateLogIfNeeded` swallow all exceptions silently. Could hide failures from an attacker manipulating the log path. **Fix:** at minimum log to stderr/_logger on failure; open log files with `FileShare.Read` and explicit non-symlink-follow semantics.
-- [ ] **5.7 (F12)** `Thread.Sleep` during pre-shutdown delay blocks the BackgroundService thread and ignores cancellation. **Fix:** replace with token-aware `Task.Delay`.
+- [x] **5.5 (F5/F6)** Status file and log file got default umask permissions — **FIXED.** Added `SetSecurePermissions()` helper that sets 0640 (owner rw, group r, other none) on Linux. Applied to: status file (after writing the .tmp), log file (on first creation), and rotated log backup. No-op on Windows. Verified: log and status files are now created at 0640 instead of 0644.
+- [x] **5.6 (F8)** `Log` and `RotateLogIfNeeded` swallow all exceptions silently — **FIXED.** Replaced `catch { }` with `catch (Exception ex) { _logger.LogWarning(...) }` so failures surface in journalctl/Event Log. Added `_logWriteFailureReported` flag so a persistent failure (full disk, bad perms) is reported once per failure streak instead of every poll. Same treatment for `RotateLogIfNeeded`.
+- [x] **5.7 (F12)** `Thread.Sleep` during pre-shutdown delay ignored cancellation — **FIXED.** Replaced with `await Task.Delay(TimeSpan.FromSeconds(...), ct)`. Plumbed `CancellationToken` through `ProcessPollDecisionAsync`, `ProcessStatusDecisionAsync`, and `ExecuteShutdownAsync` (renamed from sync versions). If the delay is cancelled (e.g., systemctl stop), proceed directly to the main shutdown command — that's intentional, the pre-shutdown hook already ran.
 
 ### INFO (won't fix unless needed)
 

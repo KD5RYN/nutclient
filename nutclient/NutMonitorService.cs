@@ -61,7 +61,7 @@ public class NutMonitorService : BackgroundService
             {
                 await PollUpsStatusAsync(stoppingToken);
                 var decision = _stateMachine.OnPollSuccess();
-                ProcessPollDecision(decision);
+                await ProcessPollDecisionAsync(decision, stoppingToken);
             }
             catch (NutException ex) when (ex.Kind == NutErrorKind.AccessDenied)
             {
@@ -72,7 +72,7 @@ public class NutMonitorService : BackgroundService
             catch (NutException ex)
             {
                 var decision = _stateMachine.OnPollFailure(ex.Message);
-                ProcessPollDecision(decision);
+                await ProcessPollDecisionAsync(decision, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -81,7 +81,7 @@ public class NutMonitorService : BackgroundService
             catch (Exception ex)
             {
                 var decision = _stateMachine.OnPollFailure($"{ex.GetType().Name}: {ex.Message}");
-                ProcessPollDecision(decision);
+                await ProcessPollDecisionAsync(decision, stoppingToken);
             }
 
             var delay = _stateMachine.GetPollDelay();
@@ -100,7 +100,7 @@ public class NutMonitorService : BackgroundService
 
     private bool LogAll => _config.Monitoring.LogLevel.Equals("all", StringComparison.OrdinalIgnoreCase);
 
-    private void ProcessPollDecision(PollDecision decision)
+    private async Task ProcessPollDecisionAsync(PollDecision decision, CancellationToken ct)
     {
         foreach (var msg in decision.EventMessages)
             Log(msg);
@@ -108,11 +108,11 @@ public class NutMonitorService : BackgroundService
             foreach (var msg in decision.PollMessages)
                 Log(msg);
         if (decision.Shutdown is { } s)
-            ExecuteShutdown(s.Reason, s.Data);
+            await ExecuteShutdownAsync(s.Reason, s.Data, ct);
         WriteStatusFile();
     }
 
-    private void ProcessStatusDecision(StatusDecision decision)
+    private async Task ProcessStatusDecisionAsync(StatusDecision decision, CancellationToken ct)
     {
         foreach (var msg in decision.EventMessages)
             Log(msg);
@@ -120,7 +120,7 @@ public class NutMonitorService : BackgroundService
             foreach (var msg in decision.PollMessages)
                 Log(msg);
         if (decision.Shutdown is { } s)
-            ExecuteShutdown(s.Reason, s.Data);
+            await ExecuteShutdownAsync(s.Reason, s.Data, ct);
     }
 
     private async Task PollUpsStatusAsync(CancellationToken ct)
@@ -152,7 +152,7 @@ public class NutMonitorService : BackgroundService
             await conn.LogoutAsync();
 
             var decision = _stateMachine.HandleStatus(data);
-            ProcessStatusDecision(decision);
+            await ProcessStatusDecisionAsync(decision, ct);
         }
         catch
         {
@@ -182,7 +182,7 @@ public class NutMonitorService : BackgroundService
         catch (NutException) { return null; }
     }
 
-    private void ExecuteShutdown(string reason, UpsData data)
+    private async Task ExecuteShutdownAsync(string reason, UpsData data, CancellationToken ct)
     {
         // SECURITY: data.Status comes from the NUT server, which is network-controlled.
         // It gets passed to the shutdown command line, so a malicious or MITM'd server
@@ -204,7 +204,19 @@ public class NutMonitorService : BackgroundService
             if (_config.Monitoring.PreShutdownDelaySeconds > 0)
             {
                 Log($"Waiting {_config.Monitoring.PreShutdownDelaySeconds}s before shutdown...");
-                Thread.Sleep(_config.Monitoring.PreShutdownDelaySeconds * 1000);
+                // SECURITY (F12): use Task.Delay with the cancellation token instead of
+                // Thread.Sleep so service shutdown isn't blocked by this delay. If the
+                // delay is cancelled (e.g., systemctl stop), we still proceed to the
+                // main shutdown command on the next line — that's intentional, the
+                // pre-shutdown hook already ran.
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(_config.Monitoring.PreShutdownDelaySeconds), ct);
+                }
+                catch (TaskCanceledException)
+                {
+                    Log("Pre-shutdown delay cancelled — proceeding directly to shutdown");
+                }
             }
         }
 
@@ -302,11 +314,34 @@ public class NutMonitorService : BackgroundService
 
             var tmpFile = _statusFile + ".tmp";
             File.WriteAllText(tmpFile, json);
+            // SECURITY (F5): restrict to owner+group read/write before moving into place.
+            // Status file contains UPS topology and host info — not secrets, but no need
+            // to expose to all local users.
+            SetSecurePermissions(tmpFile);
             File.Move(tmpFile, _statusFile, overwrite: true);
         }
         catch (Exception ex)
         {
             _logger.LogWarning("Failed to write status file: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Set 0640 (owner rw, group r, other none) on a file. No-op on Windows.
+    /// Used for log and status files which contain non-secret but topology info.
+    /// </summary>
+    private static void SetSecurePermissions(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+        }
+        catch
+        {
+            // Permission setting is best-effort. If the file system doesn't support it
+            // (e.g., FAT mounted somewhere weird), just continue with default perms.
         }
     }
 
@@ -341,6 +376,10 @@ public class NutMonitorService : BackgroundService
         }
     }
 
+    // Track whether we've already complained about a log write failure so we
+    // don't spam the system journal/Event Log every 5 seconds.
+    private bool _logWriteFailureReported;
+
     private void Log(string message)
     {
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}";
@@ -349,9 +388,29 @@ public class NutMonitorService : BackgroundService
         try
         {
             RotateLogIfNeeded();
+            var existed = File.Exists(_logFile);
             File.AppendAllText(_logFile, line + Environment.NewLine);
+            // SECURITY (F6): set 0640 on first creation. No-op on existing files
+            // and on Windows.
+            if (!existed)
+                SetSecurePermissions(_logFile);
+
+            // Reset the failure flag on the first successful write after a failure
+            if (_logWriteFailureReported)
+                _logWriteFailureReported = false;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // SECURITY (F8): don't silently swallow log write failures. Surface them
+            // to the system logger (journalctl/Event Log) so admins notice if log
+            // file writes are broken (full disk, bad perms, missing dir, etc.).
+            // Throttled to once per failure streak so we don't spam every poll.
+            if (!_logWriteFailureReported)
+            {
+                _logger.LogWarning("Log file write failed ({Path}): {Message}", _logFile, ex.Message);
+                _logWriteFailureReported = true;
+            }
+        }
 
         Console.WriteLine(line);
     }
@@ -365,9 +424,17 @@ public class NutMonitorService : BackgroundService
             {
                 var rotated = _logFile + ".1";
                 File.Copy(_logFile, rotated, overwrite: true);
+                // SECURITY (F6): rotated backup gets the same perms as the live log.
+                SetSecurePermissions(rotated);
                 File.WriteAllText(_logFile, "");
+                SetSecurePermissions(_logFile);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // SECURITY (F8): surface rotation failures to the system logger instead
+            // of silently dropping them.
+            _logger.LogWarning("Log rotation failed ({Path}): {Message}", _logFile, ex.Message);
+        }
     }
 }
