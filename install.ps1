@@ -60,7 +60,18 @@ if (-not (Test-Path "$ScriptsDir\graceful-shutdown.ps1")) {
 $exePath = "$InstallDir\NutClient.exe"
 sc.exe create $ServiceName binPath= "$exePath" start= auto DisplayName= "$DisplayName" | Out-Null
 sc.exe description $ServiceName "$Description" | Out-Null
-sc.exe failure $ServiceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
+
+# Failure actions: never give up.
+#   1st failure → restart after 10 seconds
+#   2nd failure → restart after 30 seconds
+#   3rd failure → restart after 5 minutes
+#   4th+ failure → keeps using the last action (restart every 5 minutes) forever
+# reset=86400 means the failure counter resets after 24 hours of running successfully,
+# so a fresh crash gets the quick 10s restart again.
+# failureflag 1 ensures the failure actions also fire on clean exits (exit code 0),
+# not just crashes.
+sc.exe failure $ServiceName reset= 86400 actions= restart/10000/restart/30000/restart/300000 | Out-Null
+sc.exe failureflag $ServiceName 1 | Out-Null
 
 Write-Host ""
 Write-Host "Installation complete."
