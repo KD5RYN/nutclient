@@ -412,6 +412,37 @@ Example output:
 
 ---
 
+## Hardening (Linux)
+
+The default `nutclient.service` includes a conservative set of systemd hardening directives that block exotic attacks but **don't restrict what your shutdown script can do**:
+
+- `NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`
+- `ProtectControlGroups`, `LockPersonality`
+- `RestrictRealtime`, `RestrictSUIDSGID`
+
+If your shutdown script is **simple** (e.g., just runs `poweroff` and writes a log file), you can opt into stronger restrictions by editing `/etc/systemd/system/nutclient.service` and uncommenting some or all of the directives in the "Optional aggressive hardening" section. The most useful ones:
+
+| Directive | What it blocks | What it might break |
+|-----------|---------------|---------------------|
+| `ProtectSystem=strict` | Writes to `/usr`, `/boot`, `/etc` | Scripts that update `/etc` config or `/var/lib` state |
+| `ProtectHome=yes` | Access to `/home`, `/root` | Scripts that write to a user home dir |
+| `PrivateTmp=yes` | Shared `/tmp` access | Scripts that read other processes' temp files |
+| `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` | Raw sockets, Bluetooth, etc. | Scripts using exotic networking |
+| `MemoryDenyWriteExecute=yes` | Writable+executable memory | Some interpreters with JIT |
+| `CapabilityBoundingSet=CAP_SYS_BOOT CAP_KILL` | All capabilities except boot/kill | Mount, raw network, ptrace, ZFS commands, etc. |
+| `ReadWritePaths=/var/log /opt/nutclient` | Required if using `ProtectSystem=strict` | — |
+
+**After editing the unit file:**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart nutclient
+sudo systemctl status nutclient    # verify it actually started
+```
+
+**Test the shutdown script after enabling hardening** — restrictions are silent, and you only find out the script is broken when you actually need it. Run a real or simulated power loss and confirm `nutclient-shutdown.log` (or whatever log your script writes) shows the script ran successfully.
+
+---
+
 ## Development
 
 ### Prerequisites

@@ -9,5 +9,30 @@ WorkingDirectory=/opt/nutclient
 Restart=always
 RestartSec=10
 
+# --- Security hardening (F4) — conservative set, won't break shutdown scripts ---
+# These directives lock down the service against exotic attacks without
+# restricting what a typical shutdown script can do.
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+# --- Optional aggressive hardening — uncomment if your shutdown script is simple ---
+# These will restrict what your shutdown script can do. Test carefully before
+# enabling in production. See README "Hardening" section for details.
+#
+# ProtectSystem=strict          # /usr, /boot, /etc become read-only
+# ProtectHome=yes               # /home, /root inaccessible
+# PrivateTmp=yes                # private /tmp namespace
+# RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX    # blocks raw sockets, Bluetooth, etc.
+# MemoryDenyWriteExecute=yes    # blocks JIT-style attacks (also blocks some interpreters)
+# SystemCallFilter=@system-service  # restrict syscalls to common service set
+# CapabilityBoundingSet=CAP_SYS_BOOT CAP_KILL    # drop all capabilities except boot+kill
+# AmbientCapabilities=CAP_SYS_BOOT CAP_KILL      # children inherit only these
+# ReadWritePaths=/var/log /opt/nutclient         # required if using ProtectSystem=strict
+
 [Install]
 WantedBy=multi-user.target
