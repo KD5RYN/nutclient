@@ -129,4 +129,65 @@ public class NutConnectionTests : IAsyncLifetime
         Assert.Equal("85", await conn.GetVariableAsync("ups1", "battery.charge"));
         Assert.Equal("1200", await conn.GetVariableAsync("ups1", "battery.runtime"));
     }
+
+    // --- Security tests: bounded line reader (F3) ---
+
+    [Fact]
+    public async Task OversizedLine_ThrowsTransient()
+    {
+        // Send 16 KB of 'A' bytes (no newline) on the GET VAR response.
+        // The bounded reader caps at 8 KB so this must throw before OOM.
+        _server.RawGetVarResponse = System.Text.Encoding.ASCII.GetBytes(new string('A', 16384));
+
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var ex = await Assert.ThrowsAsync<NutException>(
+            () => conn.GetVariableAsync("ups1", "ups.status"));
+        Assert.Equal(NutErrorKind.Transient, ex.Kind);
+        Assert.Contains("exceeded", ex.Message);
+    }
+
+    [Fact]
+    public async Task LineExactlyAtLimit_Succeeds()
+    {
+        // Build a VAR response that totals 8192 bytes including the \n.
+        // The data portion (8191 bytes) plus '\n' = 8192. The bounded reader's
+        // buffer is 8192 bytes, so this is the max successful case.
+        var prefix = "VAR ups1 ups.status \"";
+        var suffix = "\"";
+        var paddingLen = 8191 - prefix.Length - suffix.Length;
+        var line = prefix + new string('X', paddingLen) + suffix + "\n";
+        _server.RawGetVarResponse = System.Text.Encoding.ASCII.GetBytes(line);
+
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var result = await conn.GetVariableAsync("ups1", "ups.status");
+        Assert.Equal(paddingLen, result.Length);
+    }
+
+    [Fact]
+    public async Task LineWithCRLF_HandlesCorrectly()
+    {
+        _server.RawGetVarResponse = System.Text.Encoding.ASCII.GetBytes("VAR ups1 ups.status \"OL\"\r\n");
+
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var result = await conn.GetVariableAsync("ups1", "ups.status");
+        Assert.Equal("OL", result);
+    }
+
+    [Fact]
+    public async Task LineWithLFOnly_HandlesCorrectly()
+    {
+        _server.RawGetVarResponse = System.Text.Encoding.ASCII.GetBytes("VAR ups1 ups.status \"OL\"\n");
+
+        using var conn = CreateConnection();
+        await conn.ConnectAsync();
+
+        var result = await conn.GetVariableAsync("ups1", "ups.status");
+        Assert.Equal("OL", result);
+    }
 }

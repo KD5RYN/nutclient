@@ -33,6 +33,14 @@ public class MockNutServer : IAsyncDisposable
     /// <summary>If true, close connection immediately after auth succeeds.</summary>
     public bool DisconnectAfterAuth { get; set; }
 
+    /// <summary>
+    /// If set, the server uses the normal auth handshake but then, on the
+    /// FIRST GET VAR request, sends these raw bytes instead of a normal response.
+    /// Used by tests that need to simulate oversized lines, missing newlines,
+    /// or specific byte sequences.
+    /// </summary>
+    public byte[]? RawGetVarResponse { get; set; }
+
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
     public string Host => "127.0.0.1";
 
@@ -88,7 +96,15 @@ public class MockNutServer : IAsyncDisposable
                 }
                 else if (line.StartsWith("GET VAR "))
                 {
-                    if (GetVarErrorResponse != null)
+                    if (RawGetVarResponse != null)
+                    {
+                        // Bypass the StreamWriter and send raw bytes directly so
+                        // tests can craft oversized lines, missing newlines, etc.
+                        await writer.FlushAsync();
+                        await stream.WriteAsync(RawGetVarResponse);
+                        await stream.FlushAsync();
+                    }
+                    else if (GetVarErrorResponse != null)
                     {
                         await writer.WriteLineAsync(GetVarErrorResponse);
                     }

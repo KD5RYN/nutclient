@@ -88,7 +88,7 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH (now fixed) and a handful of MEDIUM/LOW items.
 
-**Progress:** 2 of 7 done (F1 in commit a7671c3, F2 in commit TBD).
+**Progress:** 3 of 7 done (F1, F2, F3).
 
 ### HIGH
 
@@ -97,7 +97,7 @@ Findings from a focused security audit. Threat model: NutClient runs as root/SYS
 ### MEDIUM
 
 - [x] **5.2 (F2)** `nutclient.json` file permissions not enforced after install — **FIXED.** `install.sh` now runs `chown root:root && chmod 600` on the config file (applied unconditionally so upgrades from older installs also fix the perms). `install.ps1` runs `icacls /inheritance:r /grant SYSTEM:F /grant Administrators:F` to strip inherited Users:Read and grant only SYSTEM and Administrators. Also added a runtime check in NutMonitorService startup that warns in the log if the config file is group/other-readable on Linux — defense in depth for users who installed manually or with an older script. Verified end-to-end: warning fires with 644, silent with 600.
-- [ ] **5.3 (F3)** Unbounded `ReadLineAsync` in `NutConnection.ReadResponseAsync`. A malicious or MITM'd NUT server could stream gigabytes to OOM the client or stall polls. **Fix:** read into a bounded buffer (8 KB max per line) and throw `NutException` if exceeded.
+- [x] **5.3 (F3)** Unbounded `ReadLineAsync` in `NutConnection.ReadResponseAsync` — **FIXED.** Replaced `StreamReader.ReadLineAsync` with a manual byte-by-byte reader bounded at 8 KB. Throws `NutException(Transient)` if a response line exceeds the limit. Handles both LF and CRLF line endings. Removed the now-unused `_reader` field. 4 new tests: oversized line throws Transient with "exceeded" message, line at exactly the 8191-byte limit succeeds, both CRLF and LF endings work. End-to-end smoke tested against real NUT server — normal polling unchanged. 80 → 84 tests.
 - [ ] **5.4 (F4)** systemd unit has no hardening directives — runs as root with full ambient capabilities. **Fix:** add `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `ReadWritePaths=/var/log /opt/nutclient`, `CapabilityBoundingSet=CAP_SYS_BOOT`, `AmbientCapabilities=CAP_SYS_BOOT`, `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`. Keep running as root for the `poweroff` capability.
 
 ### LOW

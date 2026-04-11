@@ -31,9 +31,13 @@ public class NutException : Exception
 /// </summary>
 public class NutConnection : IDisposable
 {
+    // SECURITY (F3): cap NUT response lines to prevent a malicious or MITM'd
+    // server from streaming gigabytes without a newline (memory DoS / poll stall).
+    // Real NUT lines are well under 100 bytes; 8 KB is generous headroom.
+    private const int MaxLineBytes = 8192;
+
     private TcpClient? _client;
     private NetworkStream? _stream;
-    private StreamReader? _reader;
     private StreamWriter? _writer;
 
     private readonly string _host;
@@ -66,7 +70,6 @@ public class NutConnection : IDisposable
             await _client.ConnectAsync(_host, _port, cts.Token);
 
             _stream = _client.GetStream();
-            _reader = new StreamReader(_stream, Encoding.ASCII);
             _writer = new StreamWriter(_stream, Encoding.ASCII) { AutoFlush = true };
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -150,11 +153,9 @@ public class NutConnection : IDisposable
     public void Disconnect()
     {
         _writer?.Dispose();
-        _reader?.Dispose();
         _stream?.Dispose();
         _client?.Dispose();
         _writer = null;
-        _reader = null;
         _stream = null;
         _client = null;
     }
@@ -175,17 +176,44 @@ public class NutConnection : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads a single line from the NUT server with a hard cap on length.
+    /// SECURITY: enforces MaxLineBytes (8 KB) to prevent a malicious or MITM'd
+    /// server from streaming gigabytes without a newline. Real NUT lines are
+    /// well under 100 bytes.
+    /// </summary>
     private async Task<string> ReadResponseAsync(CancellationToken ct)
     {
-        if (_reader == null) throw new InvalidOperationException("Not connected");
+        if (_stream == null) throw new InvalidOperationException("Not connected");
 
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(5000);
-            var line = await _reader.ReadLineAsync(cts.Token);
-            return line ?? throw new NutException(
-                "Connection closed by server", NutErrorKind.Transient);
+
+            var buffer = new byte[MaxLineBytes];
+            int pos = 0;
+            var oneByte = new byte[1];
+
+            while (pos < MaxLineBytes)
+            {
+                int read = await _stream.ReadAsync(oneByte.AsMemory(0, 1), cts.Token);
+                if (read == 0)
+                    throw new NutException("Connection closed by server", NutErrorKind.Transient);
+
+                if (oneByte[0] == (byte)'\n')
+                {
+                    // Trim trailing \r if present (handle both LF and CRLF)
+                    var len = (pos > 0 && buffer[pos - 1] == (byte)'\r') ? pos - 1 : pos;
+                    return Encoding.ASCII.GetString(buffer, 0, len);
+                }
+
+                buffer[pos++] = oneByte[0];
+            }
+
+            throw new NutException(
+                $"Response line exceeded {MaxLineBytes} bytes — possible DoS attempt",
+                NutErrorKind.Transient);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
