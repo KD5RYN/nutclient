@@ -4,16 +4,46 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [v1.4.0] - 2026-04-11
+
+Security hardening release. A focused security audit identified one HIGH and several MEDIUM/LOW findings, all addressed in this release. **No critical RCE was present in any prior version.**
+
+### Security
+- **F1 (HIGH):** Sanitize NUT `ups.status` before passing to shutdown command. The status string was being concatenated into the command line with simple double-quote wrapping, which is not escaping. A malicious or MITM'd NUT server could break out of the quotes by returning a status like `OB LB" extra-arg "`. Not exploitable in the default config, but became RCE-as-root with `bash -c` style shutdown commands. Now the status is whitelisted to known NUT flag tokens (OL, OB, LB, FSD, CHRG, etc.) before reaching the command line. The internal state machine still sees the raw status, so detection works normally.
+- **F2 (MEDIUM):** Lock down `nutclient.json` file permissions. The config file contains the NUT password in plaintext and was being created with default umask (typically 644 on Linux, Users:Read on Windows). Three layers of defense:
+  - `install.sh` now runs `chown root:root && chmod 600`
+  - `install.ps1` now uses `icacls` to grant only SYSTEM and Administrators
+  - NutMonitorService logs a `WARNING` at startup if the config file is group/other-readable on Linux (defense in depth for stale installs)
+- **F3 (MEDIUM):** Bounded line reader on the NUT socket. `NutConnection.ReadResponseAsync` was using `StreamReader.ReadLineAsync` with no maximum length, allowing a malicious server to OOM the client or stall every poll. Now reads into an 8 KB bounded buffer and throws `NutException(Transient)` if a line exceeds the limit.
+- **F4 (MEDIUM):** Conservative systemd unit hardening. Added 7 directives (`NoNewPrivileges`, `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectControlGroups`, `LockPersonality`, `RestrictRealtime`, `RestrictSUIDSGID`) that block exotic attacks without restricting shutdown scripts. More aggressive directives are included as commented-out opt-in for users with simple shutdown scripts. New "Hardening (Linux)" section in the README explains the tradeoffs.
+- **F5/F6 (LOW):** Log and status files now created with 0640 permissions (owner rw, group r, other none) instead of default 0644.
+- **F8 (LOW):** Log write failures and rotation failures now surface in journalctl/Event Log instead of being silently swallowed. Throttled to once per failure streak.
+- **F12 (LOW):** Pre-shutdown delay now uses `Task.Delay` with cancellation token instead of `Thread.Sleep`. Service stops cleanly even if interrupted during the pre-shutdown wait.
+
 ### Added
-- `CONTRIBUTING.md` with build, test, and PR conventions
-- `SECURITY.md` for vulnerability reporting via GitHub Security Advisories
-- Issue templates (bug report, feature request) and PR template
-- Dependabot config to auto-update NuGet packages and GitHub Actions weekly
-- This CHANGELOG file
+- `SanitizeUpsStatus()` whitelist function for NUT status flags
+- `WarnIfConfigFileIsTooLoose()` runtime check on Linux startup
+- `SetSecurePermissions()` helper for log/status files
+- `RawGetVarResponse` field on `MockNutServer` for security tests
+- "Hardening (Linux)" section in README with optional directives table
+- 24 new security tests:
+  - 15 tests for `SanitizeUpsStatusTests`
+  - 4 tests for bounded line reader (oversized, exact-limit, CRLF, LF)
+  - 5 tests already added for startup messaging in v1.3.0 (no change)
+- `CONTRIBUTING.md`, `SECURITY.md`, issue templates, PR template, Dependabot config (added pre-1.4 but unreleased until now)
 - GitHub repo topics for discoverability
+- `CHANGELOG.md` itself
+
+### Changed
+- `ExecuteShutdown` is now `ExecuteShutdownAsync` and accepts a `CancellationToken`
+- `ProcessPollDecision` and `ProcessStatusDecision` likewise renamed to `Async`
+- Removed unused `_reader` (`StreamReader`) field from `NutConnection`
 
 ### Fixed
 - README clone URL no longer references a placeholder org
+
+### Stats
+60 → 84 tests passing.
 
 ## [v1.3.0] - 2026-04-11
 
@@ -67,7 +97,8 @@ Initial public release.
 - Pre-built releases for `win-x64`, `linux-x64`, `linux-arm64`
 - 52 unit and integration tests with mock NUT server
 
-[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.4.0...HEAD
+[v1.4.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.4.0
 [v1.3.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.3.0
 [v1.2.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.2.0
 [v1.1.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.1.0
