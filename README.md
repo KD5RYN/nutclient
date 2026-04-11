@@ -57,8 +57,11 @@ sudo ./install.sh
 Expand-Archive nutclient-win-x64.zip -DestinationPath C:\NutClient
 cd C:\NutClient\win-x64
 notepad nutclient.json           # set NUT server host, UPS name, credentials
-powershell -File install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
+Start-Service NutUpsMonitor      # service is installed but not started automatically — start it manually the first time
 ```
+
+> **Note:** `install.ps1` is not code-signed, so PowerShell's default execution policy will block it. Use `-ExecutionPolicy Bypass` as shown above, or run `Unblock-File install.ps1` first. The install script registers the Windows service but doesn't start it — you need to run `Start-Service NutUpsMonitor` manually the first time (or edit the config first, then start). On subsequent boots the service starts automatically.
 
 The install scripts will:
 - Copy the binary, config, and shutdown script to the right locations
