@@ -84,9 +84,11 @@ Test setup: Raspberry Pi running NUT with APC Back-UPS ES 850G2 plus a `dummy-up
 
 ---
 
-## Phase 5: Security Hardening — TODO
+## Phase 5: Security Hardening — IN PROGRESS
 
-Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH and a handful of MEDIUM/LOW items.
+Findings from a focused security audit. Threat model: NutClient runs as root/SYSTEM, connects outbound to a NUT server on a trusted LAN over plain TCP. **No critical RCE found.** One HIGH (now fixed) and a handful of MEDIUM/LOW items.
+
+**Progress:** 1 of 7 done (HIGH item F1 fixed in commit a7671c3).
 
 ### HIGH
 
