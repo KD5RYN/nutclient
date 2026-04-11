@@ -18,6 +18,8 @@ public class UpsStateMachine
     private int _consecutiveFailures;
     private DateTimeOffset? _lastSuccessfulPoll;
     private bool _accessDenied;
+    private bool _everConnected;     // true once we've had at least one successful poll
+    private bool _startupNoticeLogged; // true once we've logged "can't reach server yet"
 
     // Last known data
     private UpsData _lastUpsData = new();
@@ -183,8 +185,16 @@ public class UpsStateMachine
     public PollDecision OnPollSuccess()
     {
         var events = new List<string>();
-        if (_consecutiveFailures > 0)
+
+        if (!_everConnected)
+        {
+            events.Add("Successfully connected to NUT server for the first time");
+            _everConnected = true;
+        }
+        else if (_consecutiveFailures > 0)
+        {
             events.Add($"Connection restored after {_consecutiveFailures} failed poll(s)");
+        }
 
         _consecutiveFailures = 0;
         _lastSuccessfulPoll = _clock.GetUtcNow();
@@ -200,8 +210,17 @@ public class UpsStateMachine
         _currentState = "Error";
         AddHistory("error", message);
 
-        if (_consecutiveFailures <= 3 || _consecutiveFailures % 10 == 0)
+        // First failure ever, and we've never connected → log a startup notice
+        // so admins know the client is alive but waiting for the NUT server.
+        if (!_everConnected && !_startupNoticeLogged)
+        {
+            events.Add($"Cannot reach NUT server yet — will keep trying. ({message})");
+            _startupNoticeLogged = true;
+        }
+        else if (_consecutiveFailures <= 3 || _consecutiveFailures % 10 == 0)
+        {
             events.Add($"Poll error ({_consecutiveFailures} consecutive): {message}");
+        }
 
         if (_lastSuccessfulPoll.HasValue)
         {

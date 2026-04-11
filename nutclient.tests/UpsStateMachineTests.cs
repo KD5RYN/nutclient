@@ -291,16 +291,68 @@ public class UpsStateMachineTests
     [Fact]
     public void OnPollSuccess_LogsRestoredAfterFailure()
     {
+        _sm.OnPollSuccess();              // first success — gets the "first time" message
         _sm.OnPollFailure("error");
         var decision = _sm.OnPollSuccess();
         Assert.Contains(decision.EventMessages, m => m.Contains("Connection restored"));
     }
 
     [Fact]
-    public void OnPollSuccess_NoMessageWhenNoFailures()
+    public void OnPollSuccess_NoMessageOnSubsequentSuccesses()
+    {
+        _sm.OnPollSuccess();              // first one logs the "first time" message
+        var decision = _sm.OnPollSuccess(); // subsequent successes are silent
+        Assert.Empty(decision.EventMessages);
+    }
+
+    [Fact]
+    public void FirstSuccessfulPoll_LogsFirstTimeMessage()
     {
         var decision = _sm.OnPollSuccess();
-        Assert.Empty(decision.EventMessages);
+        Assert.Contains(decision.EventMessages,
+            m => m.Contains("Successfully connected to NUT server for the first time"));
+    }
+
+    [Fact]
+    public void FirstSuccessAfterFailures_LogsFirstTimeNotRestored()
+    {
+        // Server unreachable at startup, then becomes reachable
+        _sm.OnPollFailure("connection refused");
+        _sm.OnPollFailure("connection refused");
+        var decision = _sm.OnPollSuccess();
+
+        // Should say "first time", not "restored after N failed polls"
+        Assert.Contains(decision.EventMessages,
+            m => m.Contains("Successfully connected to NUT server for the first time"));
+        Assert.DoesNotContain(decision.EventMessages, m => m.Contains("Connection restored"));
+    }
+
+    [Fact]
+    public void FirstFailureBeforeAnyConnection_LogsStartupNotice()
+    {
+        var decision = _sm.OnPollFailure("connection refused");
+        Assert.Contains(decision.EventMessages,
+            m => m.Contains("Cannot reach NUT server yet"));
+    }
+
+    [Fact]
+    public void StartupNotice_OnlyLoggedOnce()
+    {
+        _sm.OnPollFailure("error 1");
+        var decision = _sm.OnPollFailure("error 2");
+        // The startup notice should not appear again on subsequent failures
+        Assert.DoesNotContain(decision.EventMessages,
+            m => m.Contains("Cannot reach NUT server yet"));
+    }
+
+    [Fact]
+    public void StartupNotice_NotLoggedAfterSuccessfulConnection()
+    {
+        _sm.OnPollSuccess();              // we've connected at least once
+        var decision = _sm.OnPollFailure("connection lost");
+        // Subsequent failures should NOT log the startup notice
+        Assert.DoesNotContain(decision.EventMessages,
+            m => m.Contains("Cannot reach NUT server yet"));
     }
 
     [Fact]

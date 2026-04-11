@@ -486,12 +486,12 @@ dotnet test nutclient.tests --filter "FullyQualifiedName~TimerExpiry_TriggersShu
 
 ### Test Coverage
 
-**55 tests** across 3 files:
+**60 tests** across 3 files:
 
 | File | Tests | What's covered |
 |------|-------|----------------|
 | `NutConnectionTests` | 10 | TCP connection, auth success/failure, variable queries, error classification (Transient vs AccessDenied vs Protocol), server disconnect |
-| `UpsStateMachineTests` | 36 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, disabled timer (ShutdownDelaySeconds=0), battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once |
+| `UpsStateMachineTests` | 41 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, disabled timer (ShutdownDelaySeconds=0), battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once, first-connect/startup-notice messages |
 | `BackoffTests` | 9 | Exponential backoff formula (parameterized), max cap at 60s, reset after success |
 
 Tests run automatically on every push and pull request via GitHub Actions ([ci.yml](.github/workflows/ci.yml)). Contributors can see test results directly on their PRs.
