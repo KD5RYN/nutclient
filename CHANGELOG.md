@@ -4,6 +4,22 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [v1.4.1] - 2026-04-11
+
+Patch release. Cleaner error messages when the config file is missing or malformed, plus tested edge cases against a live test environment.
+
+### Fixed
+- **Config file errors no longer print stack traces.** A missing `nutclient.json` or one with invalid JSON used to throw an unhandled exception with a 50-line stack trace. Now they print a clean one-line error explaining what's wrong, where to look, and how to fix it, then exit with code 1.
+
+### Tested
+Verified 6 edge cases against the live test environment (NUT server with `dummy-ups` driver):
+- Rapid power flicker (3 cycles of OL↔OB) — state machine handles cleanly
+- NUT server restart while client is connected — backoff and reconnect work
+- Server recovery just before dead time fires — no false shutdown
+- SIGTERM during battery countdown — clean shutdown in <30ms (validates F12 from v1.4.0)
+- Unwritable log file — service continues running, warning logged once (validates F8 from v1.4.0)
+- Missing/malformed config — now produces clean error messages (the fix above)
+
 ### Infrastructure
 - Updated GitHub Actions to current versions (silences Node 20 deprecation warnings):
   - `actions/checkout` 4 → 6
@@ -15,8 +31,7 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
   - `Microsoft.NET.Test.Sdk` 17.8.0 → 18.4.0
   - `xunit` 2.5.3 → 2.9.3
 - Added Dependabot ignore rules for `Microsoft.Extensions.Hosting.*` and `Microsoft.Extensions.TimeProvider.*` major bumps (target .NET 10, will revisit on .NET upgrade) and xunit major bumps (xunit 3 has breaking API changes, will upgrade deliberately).
-
-No user-visible changes — the shipped binary is identical to v1.4.0.
+- Added `.gitignore` patterns to prevent stray Windows-path files from being committed when the binary is run on Linux with the default Windows config.
 
 ## [v1.4.0] - 2026-04-11
 
@@ -111,7 +126,8 @@ Initial public release.
 - Pre-built releases for `win-x64`, `linux-x64`, `linux-arm64`
 - 52 unit and integration tests with mock NUT server
 
-[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/KD5RYN/nutclient/compare/v1.4.1...HEAD
+[v1.4.1]: https://github.com/KD5RYN/nutclient/releases/tag/v1.4.1
 [v1.4.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.4.0
 [v1.3.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.3.0
 [v1.2.0]: https://github.com/KD5RYN/nutclient/releases/tag/v1.2.0
