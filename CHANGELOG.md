@@ -4,6 +4,20 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Infrastructure
+- Updated GitHub Actions to current versions (silences Node 20 deprecation warnings):
+  - `actions/checkout` 4 → 6
+  - `actions/setup-dotnet` 4 → 5
+  - `actions/upload-artifact` 4 → 7
+  - `actions/download-artifact` 4 → 8
+- Updated test-only NuGet packages:
+  - `coverlet.collector` 6.0.0 → 8.0.1
+  - `Microsoft.NET.Test.Sdk` 17.8.0 → 18.4.0
+  - `xunit` 2.5.3 → 2.9.3
+- Added Dependabot ignore rules for `Microsoft.Extensions.Hosting.*` and `Microsoft.Extensions.TimeProvider.*` major bumps (target .NET 10, will revisit on .NET upgrade) and xunit major bumps (xunit 3 has breaking API changes, will upgrade deliberately).
+
+No user-visible changes — the shipped binary is identical to v1.4.0.
+
 ## [v1.4.0] - 2026-04-11
 
 Security hardening release. A focused security audit identified one HIGH and several MEDIUM/LOW findings, all addressed in this release. **No critical RCE was present in any prior version.**
