@@ -494,3 +494,9 @@ public async Task MyNewConnectionTest()
     Assert.Equal("OB", status);
 }
 ```
+
+---
+
+## License
+
+NutClient is released under the [MIT License](LICENSE). Free to use, modify, and distribute for any purpose — commercial or personal. Only requirement is to keep the copyright notice in derivative works.
