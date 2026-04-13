@@ -4,6 +4,11 @@ All notable changes to NutClient are documented here. Format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [v1.5.1] - 2026-04-13
+
+### Changed
+- **Hyper-V VMs now shut down in parallel.** The graceful shutdown script previously stopped VMs sequentially, waiting for each to complete before starting the next. VMs are now stopped concurrently using background jobs with a 3-minute timeout, ensuring all VMs finish before the NAS shuts down.
+
 ## [v1.5.0] - 2026-04-11
 
 Persistent connection release. NutClient now connects once at startup and holds the TCP connection open across polls, sending the NUT `LOGIN` command after authentication. This makes NutClient visible in the NUT server's `LIST CLIENT` and `NUMLOGINS` queries — meaning monitoring dashboards can now show "which clients are checking in" properly.

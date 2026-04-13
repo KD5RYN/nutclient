@@ -34,9 +34,12 @@ if (Get-Command Get-VM -ErrorAction SilentlyContinue) {
     $vms = Get-VM | Where-Object { $_.State -eq 'Running' }
     foreach ($vm in $vms) {
         Add-Content -Path $logFile -Value "$timestamp - Stopping VM: $($vm.Name)"
-        Stop-VM -Name $vm.Name -Force
+        Stop-VM -Name $vm.Name -Force -AsJob
     }
-    Add-Content -Path $logFile -Value "$timestamp - All VMs stopped"
+    # Wait for all VMs to finish shutting down (up to 3 minutes)
+    Get-Job | Wait-Job -Timeout 180 | Out-Null
+    Get-Job | Remove-Job -Force
+    Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - All VMs stopped"
 }
 
 # --- Add custom shutdown tasks here ---
