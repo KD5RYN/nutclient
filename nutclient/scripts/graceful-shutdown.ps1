@@ -30,17 +30,19 @@ $logFile = "C:\Scripts\shutdown-log.txt"
 Add-Content -Path $logFile -Value "$timestamp - UPS shutdown initiated (reason: $Reason, charge: $BatteryCharge%, runtime: ${BatteryRuntime}s, status: $UpsStatus)"
 
 # --- Stop Hyper-V VMs (if this is a Hyper-V host) ---
-if (Get-Command Get-VM -ErrorAction SilentlyContinue) {
-    $vms = Get-VM | Where-Object { $_.State -eq 'Running' }
-    foreach ($vm in $vms) {
-        Add-Content -Path $logFile -Value "$timestamp - Stopping VM: $($vm.Name)"
-        Stop-VM -Name $vm.Name -Force -AsJob
-    }
-    # Wait for all VMs to finish shutting down (up to 3 minutes)
-    Get-Job | Wait-Job -Timeout 180 | Out-Null
-    Get-Job | Remove-Job -Force
-    Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - All VMs stopped"
-}
+# Commented out: letting the host shutdown handle VM shutdown naturally,
+# which allows VMs to flush NAS I/O during the host's own shutdown sequence.
+# if (Get-Command Get-VM -ErrorAction SilentlyContinue) {
+#     $vms = Get-VM | Where-Object { $_.State -eq 'Running' }
+#     foreach ($vm in $vms) {
+#         Add-Content -Path $logFile -Value "$timestamp - Stopping VM: $($vm.Name)"
+#         Stop-VM -Name $vm.Name -Force -AsJob
+#     }
+#     # Wait for all VMs to finish shutting down (up to 3 minutes)
+#     Get-Job | Wait-Job -Timeout 180 | Out-Null
+#     Get-Job | Remove-Job -Force
+#     Add-Content -Path $logFile -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - All VMs stopped"
+# }
 
 # --- Add custom shutdown tasks here ---
 # Example: Stop a specific service
