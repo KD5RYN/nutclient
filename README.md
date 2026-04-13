@@ -20,7 +20,7 @@ A .NET 8 service that monitors a NUT (Network UPS Tools) server and runs a shutd
                                     └──────────────────────────┘
 ```
 
-- Connects to a NUT server via TCP port 3493
+- Maintains a persistent TCP connection to a NUT server (port 3493) with `LOGIN` registration
 - Polls `ups.status` every 5 seconds (configurable)
 - On battery (`OB`): starts a 60-second countdown
 - Low battery (`LB`) or Forced Shutdown (`FSD`): immediate shutdown
@@ -330,7 +330,7 @@ param(
 
 What the example does:
 - Logs the shutdown event with reason and battery info
-- Stops all running Hyper-V VMs (if Hyper-V is installed)
+- Stops all running Hyper-V VMs in parallel (if Hyper-V is installed), with a 3-minute timeout
 - Shuts down Windows
 
 Customize it to stop your own services, save application state, or take different actions based on the reason.
@@ -517,12 +517,13 @@ dotnet test nutclient.tests --filter "FullyQualifiedName~TimerExpiry_TriggersShu
 
 ### Test Coverage
 
-**60 tests** across 3 files:
+**89 tests** across 4 files:
 
 | File | Tests | What's covered |
 |------|-------|----------------|
-| `NutConnectionTests` | 10 | TCP connection, auth success/failure, variable queries, error classification (Transient vs AccessDenied vs Protocol), server disconnect |
+| `NutConnectionTests` | 19 | TCP connection, auth success/failure, variable queries, error classification (Transient vs AccessDenied vs Protocol), server disconnect, persistent connection, LOGIN registration |
 | `UpsStateMachineTests` | 41 | OL/OB/LB/FSD state transitions, power restore cancels shutdown, timer expiry, disabled timer (ShutdownDelaySeconds=0), battery charge/runtime thresholds, thresholds ignored on AC, dead time (comms loss while on battery), input voltage/load warnings, combined status flags (OL CHRG, OB LB DISCHRG), history capping, shutdown-only-once, first-connect/startup-notice messages |
+| `SanitizeUpsStatusTests` | 20 | UPS status string parsing and sanitization (parameterized) |
 | `BackoffTests` | 9 | Exponential backoff formula (parameterized), max cap at 60s, reset after success |
 
 Tests run automatically on every push and pull request via GitHub Actions ([ci.yml](.github/workflows/ci.yml)). Contributors can see test results directly on their PRs.
